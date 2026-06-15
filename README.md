@@ -222,6 +222,44 @@ npm run sheets:sync:loop
 
 Detached/manual background runs usually write logs and PID files under `data/`.
 
+## Runtime Data Migration
+
+For moving to another server, do not commit raw WhatsApp runtime data to a public GitHub repo. The SQLite database can contain raw messages, sender IDs, timestamps, and operational details.
+
+Use a local migration archive instead.
+
+Export runtime data:
+
+```bash
+bin/export-migration.sh
+```
+
+This includes, when present:
+
+- `data/ops_messages.sqlite3`
+- `data/reference/master_iata.json`
+- `data/google-sheets-movement-sync-state.json`
+
+Encrypt the archive before moving it:
+
+```bash
+MIGRATION_PASSPHRASE='use-a-long-passphrase' bin/export-migration.sh
+```
+
+Import on the new server:
+
+```bash
+MIGRATION_PASSPHRASE='use-a-long-passphrase' bin/import-migration.sh /path/to/new-spirit-runtime-YYYYMMDDTHHMMSSZ.tar.gz.enc
+```
+
+Local Google Sheets env can also be included if needed:
+
+```bash
+INCLUDE_LOCAL_ENV=1 MIGRATION_PASSPHRASE='use-a-long-passphrase' bin/export-migration.sh
+```
+
+WhatsApp linked-device credentials under `.runtime-auth/` are not included by this migration script. Re-link the worker with a fresh QR on the new machine.
+
 ## Export Parser
 
 For manual WhatsApp chat exports:
@@ -253,5 +291,6 @@ Do not commit:
 - WhatsApp JSONL exports
 - logs and PID files
 - `node_modules/`
+- migration archives
 
 These are already covered by `.gitignore`.

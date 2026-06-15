@@ -20,6 +20,9 @@ __pycache__/
 *.sqlite3-*
 *.jsonl
 *.csv
+*.tar.gz
+*.tar.gz.enc
+migration-exports/
 
 # Local env files
 .env
