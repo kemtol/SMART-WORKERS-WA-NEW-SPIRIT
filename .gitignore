@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Runtime state and credentials
+data/
+.runtime-auth/
+config/*.env
+
+# Python / local caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Logs and process files
+*.log
+*.pid
+
+# Databases and local exports
+*.sqlite3
+*.sqlite3-*
+*.jsonl
+*.csv
+
+# Local env files
+.env
+.env.*
+!*.env.example
+!config/*.env.example

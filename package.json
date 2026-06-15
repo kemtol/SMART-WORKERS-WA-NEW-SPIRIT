@@ -1,0 +1,29 @@
+{
+  "name": "new-spirit-scrapper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "groups": "node src/discover-groups.js --name \"New Spirit\"",
+    "scrape": "node src/scrape-history.js --group-name \"New Spirit\"",
+    "last10": "node src/scrape-history.js --group-name \"New Spirit\" --limit 10 --wait-seconds 180",
+    "listen": "node src/listen-new-messages.js --group-name \"New Spirit\"",
+    "listen:loop": "bash bin/run-listener-loop.sh",
+    "listen:no-post": "node src/listen-new-messages.js --group-name \"New Spirit\" --no-post",
+    "ingest": "python3 app/ingest_service.py",
+    "ingest:loop": "bash bin/run-ingest-loop.sh",
+    "movements:rebuild": "python3 app/rebuild_movements.py",
+    "sheets:sync": "python3 app/google_sheets_sync.py --once",
+    "sheets:sync:loop": "bash bin/run-sheets-sync-loop.sh",
+    "parse-export": "node src/parse-export.js",
+    "last10-export": "node src/parse-export.js --last 10 --pretty"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "baileys": "^7.0.0-rc13",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
