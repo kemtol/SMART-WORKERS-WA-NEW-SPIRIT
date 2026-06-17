@@ -77,6 +77,9 @@ export async function connectWhatsApp({
   loggerLevel = 'silent',
   printQRInTerminal = false,
   waitTimeoutMs = 60_000,
+  pairingPhoneNumber = null,
+  customPairingCode = null,
+  onPairingCode = null,
   onConnectionUpdate = null
 }) {
   const logger = makeLogger(loggerLevel);
@@ -100,6 +103,11 @@ export async function connectWhatsApp({
   });
   sock.ev.on('creds.update', saveCreds);
   if (onConnectionUpdate) sock.ev.on('connection.update', onConnectionUpdate);
+  if (pairingPhoneNumber && !state.creds.registered) {
+    const phoneNumber = String(pairingPhoneNumber).replace(/\D/g, '');
+    const code = await sock.requestPairingCode(phoneNumber, customPairingCode || undefined);
+    if (onPairingCode) await onPairingCode(code, phoneNumber);
+  }
   await waitForOpen(sock, waitTimeoutMs);
   return sock;
 }

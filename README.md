@@ -382,6 +382,18 @@ Saat pertama kali jalan, scan QR dengan WhatsApp:
 WhatsApp -> Linked devices -> Link a device
 ```
 
+Jika terminal tidak bisa menampilkan QR dengan utuh, gunakan pairing code:
+
+```bash
+npm run listen:pair -- 628123456789
+```
+
+Masukkan nomor dalam format kode negara tanpa tanda `+`. Di HP, buka:
+
+```text
+WhatsApp -> Linked devices -> Link a device -> Link with phone number instead
+```
+
 Untuk operasi jangka panjang, gunakan loop runner:
 
 ```bash

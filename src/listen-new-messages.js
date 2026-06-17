@@ -23,6 +23,7 @@ if (args.help) {
   console.log('Options:');
   console.log('  --no-post              Only write local JSONL, do not POST to Python ingest');
   console.log('  --no-qr                Do not print QR in terminal');
+  console.log('  --pair-phone <number>  Link using WhatsApp phone pairing code, e.g. 628123456789');
   console.log('  --discover-only        Resolve group and exit');
   console.log('  --out <path>           JSONL output path (default: data/live-messages.jsonl)');
   console.log('  --qr-png-out <path>    QR PNG output path (default: data/listener-qr.png)');
@@ -38,6 +39,12 @@ const statusOut = String(args['status-out'] ?? 'data/listener-status.json');
 const ingestUrl = String(args['ingest-url'] ?? 'http://127.0.0.1:8088/ingest/whatsapp');
 const qrOut = String(args['qr-out'] ?? 'data/listener-qr.txt');
 const qrPngOut = String(args['qr-png-out'] ?? 'data/listener-qr.png');
+const pairingPhoneNumber = args['pair-phone'] === true
+  ? String(args._?.[0] ?? process.env.WHATSAPP_PAIR_PHONE ?? '')
+  : args['pair-phone']
+    ? String(args['pair-phone'])
+    : process.env.WHATSAPP_PAIR_PHONE || null;
+const customPairingCode = args['pair-code'] ? String(args['pair-code']) : null;
 const shouldPost = args['no-post'] !== true;
 const targetJids = new Set(explicitGroupJid ? [explicitGroupJid] : []);
 const seen = new Set();
@@ -187,8 +194,16 @@ try {
     loggerLevel: args.verbose ? 'info' : 'silent',
     printQRInTerminal: false,
     waitTimeoutMs: Number(args['wait-timeout-ms'] ?? 300_000),
+    pairingPhoneNumber,
+    customPairingCode,
+    onPairingCode: async (code, phoneNumber) => {
+      await writeStatus({ state: 'pairing-code', pairingPhoneNumber: phoneNumber, pairingCode: code });
+      console.log('\nWhatsApp pairing code:\n');
+      console.log(`  ${code}\n`);
+      console.log('On your phone: WhatsApp -> Linked devices -> Link a device -> Link with phone number instead\n');
+    },
     onConnectionUpdate: async (update) => {
-      if (update.qr && args['no-qr'] !== true && update.qr !== lastQr) {
+      if (!pairingPhoneNumber && update.qr && args['no-qr'] !== true && update.qr !== lastQr) {
         await writeQr(update.qr);
       }
     }

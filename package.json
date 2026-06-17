@@ -8,6 +8,7 @@
     "scrape": "node src/scrape-history.js --group-name \"New Spirit\"",
     "last10": "node src/scrape-history.js --group-name \"New Spirit\" --limit 10 --wait-seconds 180",
     "listen": "node src/listen-new-messages.js --group-name \"New Spirit\"",
+    "listen:pair": "node src/listen-new-messages.js --group-name \"New Spirit\" --pair-phone",
     "listen:loop": "bash bin/run-listener-loop.sh",
     "listen:no-post": "node src/listen-new-messages.js --group-name \"New Spirit\" --no-post",
     "ingest": "python3 app/ingest_service.py",
