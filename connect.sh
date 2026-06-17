@@ -52,8 +52,11 @@ echo "  WhatsApp -> Linked devices -> Link a device"
 echo
 
 while true; do
-  node src/listen-new-messages.js --auth-dir "$AUTH_DIR" --group-name "$GROUP_NAME" --wait-timeout-ms "$WAIT_TIMEOUT_MS" "$@"
-  code=$?
+  if node src/listen-new-messages.js --auth-dir "$AUTH_DIR" --group-name "$GROUP_NAME" --wait-timeout-ms "$WAIT_TIMEOUT_MS" "$@"; then
+    code=0
+  else
+    code=$?
+  fi
   if [[ "$(auth_registered)" != "yes" ]]; then
     echo "Login belum selesai. Auth sementara dibersihkan; QR baru akan dibuat."
     clear_incomplete_auth
