@@ -30,6 +30,7 @@ DEFAULT_RAW_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_RAW_TAB", "RAW")
 DEFAULT_FLIGHT_RAW_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_FLIGHT_RAW_TAB", "FLIGHT_RAW")
 DEFAULT_WEBHOOK_URL = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL")
 DEFAULT_TOKEN = os.environ.get("GOOGLE_SHEETS_WEBHOOK_TOKEN")
+DEFAULT_SPREADSHEET_ID = os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID")
 
 RAW_HEADERS = [
     "raw_message_id",
@@ -258,7 +259,9 @@ def get_flight_raw_rows(db_path, after_id, limit):
     return result
 
 
-def post_payload(webhook_url, payload, timeout):
+def post_payload(webhook_url, payload, timeout, spreadsheet_id=None):
+    if spreadsheet_id and "spreadsheetId" not in payload:
+        payload = {**payload, "spreadsheetId": spreadsheet_id}
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         webhook_url,
@@ -274,7 +277,7 @@ def post_payload(webhook_url, payload, timeout):
     return result
 
 
-def post_rows(webhook_url, token, sheet_name, headers, rows, timeout):
+def post_rows(webhook_url, token, spreadsheet_id, sheet_name, headers, rows, timeout):
     return post_payload(
         webhook_url,
         {
@@ -284,6 +287,7 @@ def post_rows(webhook_url, token, sheet_name, headers, rows, timeout):
             "rows": rows,
         },
         timeout,
+        spreadsheet_id,
     )
 
 
@@ -305,6 +309,7 @@ def ensure_sheets(args):
             ],
         },
         args.timeout_seconds,
+        args.spreadsheet_id,
     )
     print(json.dumps({"ok": True, "status": "ensured", "webhook": result}, ensure_ascii=False))
 
@@ -320,6 +325,7 @@ def delete_legacy_sheets(args):
             "keepSheetName": args.raw_sheet_name,
         },
         args.timeout_seconds,
+        args.spreadsheet_id,
     )
     print(json.dumps({"ok": True, "status": "legacy_deleted", "webhook": result}, ensure_ascii=False))
 
@@ -328,7 +334,7 @@ def sync_dataset(args, state, state_key, sheet_name, headers, rows, id_key):
     if not rows:
         return {"sheet": sheet_name, "rows": 0, state_key: state[state_key], "status": "idle"}
 
-    result = post_rows(args.webhook_url, args.token, sheet_name, headers, rows, args.timeout_seconds)
+    result = post_rows(args.webhook_url, args.token, args.spreadsheet_id, sheet_name, headers, rows, args.timeout_seconds)
     last_id = max(int(row[id_key]) for row in rows)
     state[state_key] = last_id
     save_state(args.state, state)
@@ -432,6 +438,7 @@ def main():
     parser.add_argument("--state", default=DEFAULT_STATE)
     parser.add_argument("--webhook-url", default=DEFAULT_WEBHOOK_URL)
     parser.add_argument("--token", default=DEFAULT_TOKEN)
+    parser.add_argument("--spreadsheet-id", default=DEFAULT_SPREADSHEET_ID)
     parser.add_argument("--raw-sheet-name", default=DEFAULT_RAW_SHEET_NAME)
     parser.add_argument("--flight-raw-sheet-name", default=DEFAULT_FLIGHT_RAW_SHEET_NAME)
     parser.add_argument("--batch-size", type=int, default=100)

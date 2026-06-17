@@ -322,7 +322,7 @@ Langkah setup Apps Script:
 3. Paste isi `integrations/google-sheets-webhook.gs`.
 4. Tambahkan Script Properties:
    - `TOKEN`: token random privat.
-   - `SPREADSHEET_ID`: ID Google Sheet tujuan.
+   - `SPREADSHEET_ID`: ID Google Sheet tujuan. Ini tetap direkomendasikan walaupun worker juga bisa mengirim `GOOGLE_SHEETS_SPREADSHEET_ID` dari config lokal.
 5. Deploy sebagai Web App.
 6. Atur `Execute as` ke `Me`.
 7. Atur access ke `Anyone`.
@@ -339,6 +339,7 @@ Isi file tersebut:
 ```bash
 GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
 GOOGLE_SHEETS_WEBHOOK_TOKEN=token-yang-sama-dengan-apps-script
+GOOGLE_SHEETS_SPREADSHEET_ID=id-google-sheet-tujuan
 GOOGLE_SHEETS_RAW_TAB=RAW
 GOOGLE_SHEETS_FLIGHT_RAW_TAB=FLIGHT_RAW
 ```

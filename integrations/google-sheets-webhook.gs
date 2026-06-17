@@ -93,7 +93,7 @@ function doPost(event) {
     return json_({ ok: false, error: 'unauthorized' });
   }
 
-  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || DEFAULT_SPREADSHEET_ID;
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID') || payload.spreadsheetId || DEFAULT_SPREADSHEET_ID;
   if (!spreadsheetId) {
     return json_({ ok: false, error: 'missing SPREADSHEET_ID script property' });
   }
