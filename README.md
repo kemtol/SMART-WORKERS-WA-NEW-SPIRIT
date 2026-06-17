@@ -394,6 +394,20 @@ Masukkan nomor dalam format kode negara tanpa tanda `+`. Di HP, buka:
 WhatsApp -> Linked devices -> Link a device -> Link with phone number instead
 ```
 
+Biarkan terminal tetap menyala sampai muncul status `listening`. Jika pairing gagal dengan error seperti `QR refs attempts ended`, reset sesi listener lalu coba lagi:
+
+```bash
+rm -rf .runtime-auth/listener data/listener-status.json data/listener-qr.txt data/listener-qr.png
+npm run listen:pair -- 628123456789
+```
+
+Jika kode random sulit diketik, gunakan custom code 8 karakter:
+
+```bash
+rm -rf .runtime-auth/listener data/listener-status.json data/listener-qr.txt data/listener-qr.png
+npm run listen:pair -- 628123456789 --pair-code 12345678
+```
+
 Untuk operasi jangka panjang, gunakan loop runner:
 
 ```bash

@@ -58,6 +58,10 @@ export async function exists(filePath) {
   }
 }
 
+export function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function prepareAuthDir(args) {
   if (args['auth-dir']) return path.resolve(String(args['auth-dir']));
 
@@ -104,6 +108,7 @@ export async function connectWhatsApp({
   sock.ev.on('creds.update', saveCreds);
   if (onConnectionUpdate) sock.ev.on('connection.update', onConnectionUpdate);
   if (pairingPhoneNumber && !state.creds.registered) {
+    await sleep(3000);
     const phoneNumber = String(pairingPhoneNumber).replace(/\D/g, '');
     const code = await sock.requestPairingCode(phoneNumber, customPairingCode || undefined);
     if (onPairingCode) await onPairingCode(code, phoneNumber);

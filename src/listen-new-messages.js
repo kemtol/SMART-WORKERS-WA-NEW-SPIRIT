@@ -24,6 +24,7 @@ if (args.help) {
   console.log('  --no-post              Only write local JSONL, do not POST to Python ingest');
   console.log('  --no-qr                Do not print QR in terminal');
   console.log('  --pair-phone <number>  Link using WhatsApp phone pairing code, e.g. 628123456789');
+  console.log('  --pair-code <code>     Optional custom 8-character pairing code');
   console.log('  --discover-only        Resolve group and exit');
   console.log('  --out <path>           JSONL output path (default: data/live-messages.jsonl)');
   console.log('  --qr-png-out <path>    QR PNG output path (default: data/listener-qr.png)');
