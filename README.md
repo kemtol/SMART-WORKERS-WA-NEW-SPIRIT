@@ -98,6 +98,14 @@ Aturan utama:
 
 Untuk tahap pengembangan awal, proses pembersihan AI boleh dilakukan dengan bantuan Codex secara manual. Setelah prompt, skema, dan gerbang validasi stabil, kontrak yang sama dipindahkan ke worker khusus yang memanggil endpoint prompt.
 
+Kontrak prompt awal disimpan di:
+
+```text
+prompts/flight_ops_deepclean_v1.md
+```
+
+File prompt ini harus dianggap sebagai sumber resmi untuk versi `flight_ops_deepclean_v1`. Jika strategi pembersihan berubah, buat versi prompt baru, jangan mengubah perilaku lama secara diam-diam.
+
 ### Status Pembersihan Mendalam
 
 `FLIGHT_RAW` perlu memiliki kolom kontrol:
@@ -174,6 +182,10 @@ Endpoint prompt harus mengembalikan JSON ketat. Respons berupa paragraf atau pro
 Field dataset gold yang direkomendasikan:
 
 ```text
+schema_version
+prompt_version
+movement_id
+raw_message_id
 operation_date
 movement_type
 registration
@@ -194,6 +206,10 @@ remark
 ops_status
 ai_confidence
 review_notes
+source_trace
+source_text
+deepcleaned_at
+deepclean_model
 ```
 
 Skema boleh berkembang, tetapi setiap perubahan skema harus memiliki versi yang eksplisit.

@@ -115,6 +115,10 @@ FLIGHT_RAW_HEADERS = [
 ]
 
 FLIGHT_OPS_HEADERS = [
+    "schema_version",
+    "prompt_version",
+    "movement_id",
+    "raw_message_id",
     "operation_date",
     "movement_type",
     "registration",
@@ -135,11 +139,9 @@ FLIGHT_OPS_HEADERS = [
     "ops_status",
     "ai_confidence",
     "review_notes",
-    "movement_id",
-    "raw_message_id",
+    "source_trace",
     "source_text",
     "deepcleaned_at",
-    "deepclean_prompt_version",
     "deepclean_model",
 ]
 
