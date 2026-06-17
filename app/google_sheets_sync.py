@@ -28,6 +28,7 @@ DEFAULT_DB = os.environ.get("OPS_DB_PATH", "data/ops_messages.sqlite3")
 DEFAULT_STATE = os.environ.get("OPS_SHEETS_STATE", "data/google-sheets-movement-sync-state.json")
 DEFAULT_RAW_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_RAW_TAB", "RAW")
 DEFAULT_FLIGHT_RAW_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_FLIGHT_RAW_TAB", "FLIGHT_RAW")
+DEFAULT_FLIGHT_OPS_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_FLIGHT_OPS_TAB", "FLIGHT_OPS")
 DEFAULT_WEBHOOK_URL = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL")
 DEFAULT_TOKEN = os.environ.get("GOOGLE_SHEETS_WEBHOOK_TOKEN")
 DEFAULT_SPREADSHEET_ID = os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID")
@@ -111,6 +112,35 @@ FLIGHT_RAW_HEADERS = [
     "deepclean_error",
     "flight_ops_id",
     "source_text",
+]
+
+FLIGHT_OPS_HEADERS = [
+    "operation_date",
+    "movement_type",
+    "registration",
+    "aircraft_type",
+    "flight_seq",
+    "leg_origin_code",
+    "leg_destination_code",
+    "route_full",
+    "takeoff_time",
+    "eta_time",
+    "ata_time",
+    "pax",
+    "pax_weight_kg",
+    "baggage_kg",
+    "cargo_kg",
+    "total_load_kg",
+    "remark",
+    "ops_status",
+    "ai_confidence",
+    "review_notes",
+    "movement_id",
+    "raw_message_id",
+    "source_text",
+    "deepcleaned_at",
+    "deepclean_prompt_version",
+    "deepclean_model",
 ]
 
 
@@ -306,6 +336,7 @@ def ensure_sheets(args):
             "sheets": [
                 {"name": args.raw_sheet_name, "headers": RAW_HEADERS},
                 {"name": args.flight_raw_sheet_name, "headers": FLIGHT_RAW_HEADERS},
+                {"name": args.flight_ops_sheet_name, "headers": FLIGHT_OPS_HEADERS},
             ],
         },
         args.timeout_seconds,
@@ -441,6 +472,7 @@ def main():
     parser.add_argument("--spreadsheet-id", default=DEFAULT_SPREADSHEET_ID)
     parser.add_argument("--raw-sheet-name", default=DEFAULT_RAW_SHEET_NAME)
     parser.add_argument("--flight-raw-sheet-name", default=DEFAULT_FLIGHT_RAW_SHEET_NAME)
+    parser.add_argument("--flight-ops-sheet-name", default=DEFAULT_FLIGHT_OPS_SHEET_NAME)
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--interval-seconds", type=int, default=15)
     parser.add_argument("--timeout-seconds", type=int, default=30)

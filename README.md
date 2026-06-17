@@ -307,11 +307,6 @@ Tujuan sinkronisasi yang sudah diimplementasikan saat ini:
 ```text
 RAW
 FLIGHT_RAW
-```
-
-Target PRD berikutnya akan menambahkan tab gold:
-
-```text
 FLIGHT_OPS
 ```
 
@@ -342,17 +337,18 @@ GOOGLE_SHEETS_WEBHOOK_TOKEN=token-yang-sama-dengan-apps-script
 GOOGLE_SHEETS_SPREADSHEET_ID=id-google-sheet-tujuan
 GOOGLE_SHEETS_RAW_TAB=RAW
 GOOGLE_SHEETS_FLIGHT_RAW_TAB=FLIGHT_RAW
+GOOGLE_SHEETS_FLIGHT_OPS_TAB=FLIGHT_OPS
 ```
 
 File `config/google-sheets.env` tidak boleh di-commit.
 
-Buat atau pastikan tab `RAW` dan `FLIGHT_RAW` tersedia di Google Sheets:
+Buat atau pastikan tab `RAW`, `FLIGHT_RAW`, dan `FLIGHT_OPS` tersedia di Google Sheets:
 
 ```bash
 npm run sheets:ensure
 ```
 
-Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW` dan `FLIGHT_RAW` sudah benar:
+Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, dan `FLIGHT_OPS` sudah benar:
 
 ```bash
 npm run sheets:delete-legacy
@@ -524,7 +520,7 @@ Karena folder `data/` di-ignore, master internal tidak ikut ke GitHub.
 
 ## Sinkronisasi ke Google Sheets
 
-Pastikan tab `RAW` dan `FLIGHT_RAW` sudah ada:
+Pastikan tab `RAW`, `FLIGHT_RAW`, dan `FLIGHT_OPS` sudah ada:
 
 ```bash
 npm run sheets:ensure

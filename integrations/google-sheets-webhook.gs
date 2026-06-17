@@ -82,6 +82,35 @@ const FLIGHT_RAW_HEADERS = [
   'source_text',
 ];
 
+const FLIGHT_OPS_HEADERS = [
+  'operation_date',
+  'movement_type',
+  'registration',
+  'aircraft_type',
+  'flight_seq',
+  'leg_origin_code',
+  'leg_destination_code',
+  'route_full',
+  'takeoff_time',
+  'eta_time',
+  'ata_time',
+  'pax',
+  'pax_weight_kg',
+  'baggage_kg',
+  'cargo_kg',
+  'total_load_kg',
+  'remark',
+  'ops_status',
+  'ai_confidence',
+  'review_notes',
+  'movement_id',
+  'raw_message_id',
+  'source_text',
+  'deepcleaned_at',
+  'deepclean_prompt_version',
+  'deepclean_model',
+];
+
 function doGet() {
   return json_({ ok: true, status: 'ready' });
 }
@@ -132,12 +161,16 @@ function defaultSheets_() {
   return [
     { name: 'RAW', headers: RAW_HEADERS },
     { name: 'FLIGHT_RAW', headers: FLIGHT_RAW_HEADERS },
+    { name: 'FLIGHT_OPS', headers: FLIGHT_OPS_HEADERS },
   ];
 }
 
 function defaultHeadersForSheet_(sheetName) {
   if (sheetName === 'RAW') {
     return RAW_HEADERS;
+  }
+  if (sheetName === 'FLIGHT_OPS') {
+    return FLIGHT_OPS_HEADERS;
   }
   return FLIGHT_RAW_HEADERS;
 }
