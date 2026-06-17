@@ -13,6 +13,8 @@
     "ingest": "python3 app/ingest_service.py",
     "ingest:loop": "bash bin/run-ingest-loop.sh",
     "movements:rebuild": "python3 app/rebuild_movements.py",
+    "sheets:ensure": "python3 app/google_sheets_sync.py --ensure-sheets",
+    "sheets:delete-legacy": "python3 app/google_sheets_sync.py --delete-legacy-sheets",
     "sheets:sync": "python3 app/google_sheets_sync.py --once",
     "sheets:sync:loop": "bash bin/run-sheets-sync-loop.sh",
     "parse-export": "node src/parse-export.js",

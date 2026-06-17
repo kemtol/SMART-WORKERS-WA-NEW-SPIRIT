@@ -12,12 +12,12 @@ Yang sudah ada di repo:
 - Ingest service Python untuk menerima dan menyimpan pesan.
 - SQLite sebagai penyimpanan lokal.
 - Parser berbasis aturan untuk pesan `MVT Dept` dan `Mvt Arrival`.
-- Sinkronisasi Google Sheets ke tab implementasi saat ini: `Movements_Internal`.
+- Sinkronisasi Google Sheets ke tab bronze/silver: `RAW` dan `FLIGHT_RAW`.
 - Script migrasi data operasional lokal.
 
 Yang belum menjadi implementasi penuh:
 
-- Tab final `RAW`, `FLIGHT_RAW`, dan `FLIGHT_OPS`.
+- Tab gold `FLIGHT_OPS`.
 - Worker pembersihan mendalam AI setiap 15 menit.
 - Tombol atau kontrol pemeriksaan ulang paksa per baris di Google Sheets.
 - Prompt endpoint produksi untuk membersihkan data.
@@ -31,10 +31,10 @@ Grup WhatsApp New Spirit
   -> Baileys listener
   -> Python ingest service
   -> SQLite raw_messages / flight_movements
-  -> Google Sheets tab Movements_Internal
+  -> Google Sheets tab RAW / FLIGHT_RAW
 ```
 
-`Movements_Internal` adalah tab yang saat ini sudah diimplementasikan. Tab eksperimen lama seperti `Schedules` atau `Movements` tidak dipakai lagi.
+`RAW` adalah tab bronze untuk pesan mentah. `FLIGHT_RAW` adalah tab silver untuk hasil parser berbasis aturan. `Movements_Internal` adalah tab legacy dan tidak dipakai lagi.
 
 ## PRD: Dataset Flight Ops Hasil Pembersihan AI
 
@@ -305,14 +305,13 @@ npm install
 Tujuan sinkronisasi yang sudah diimplementasikan saat ini:
 
 ```text
-Movements_Internal
-```
-
-Target PRD berikutnya akan mengganti model ini menjadi:
-
-```text
 RAW
 FLIGHT_RAW
+```
+
+Target PRD berikutnya akan menambahkan tab gold:
+
+```text
 FLIGHT_OPS
 ```
 
@@ -340,10 +339,31 @@ Isi file tersebut:
 ```bash
 GOOGLE_SHEETS_WEBHOOK_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
 GOOGLE_SHEETS_WEBHOOK_TOKEN=token-yang-sama-dengan-apps-script
-GOOGLE_SHEETS_TAB=Movements_Internal
+GOOGLE_SHEETS_RAW_TAB=RAW
+GOOGLE_SHEETS_FLIGHT_RAW_TAB=FLIGHT_RAW
 ```
 
 File `config/google-sheets.env` tidak boleh di-commit.
+
+Buat atau pastikan tab `RAW` dan `FLIGHT_RAW` tersedia di Google Sheets:
+
+```bash
+npm run sheets:ensure
+```
+
+Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW` dan `FLIGHT_RAW` sudah benar:
+
+```bash
+npm run sheets:delete-legacy
+```
+
+Command ini mencoba menghapus tab legacy berikut:
+
+```text
+Movements_Internal
+Movements
+Schedules
+```
 
 ## Menjalankan Listener WhatsApp
 
@@ -468,7 +488,13 @@ Karena folder `data/` di-ignore, master internal tidak ikut ke GitHub.
 
 ## Sinkronisasi ke Google Sheets
 
-Kirim movement rows yang belum tersinkron satu kali:
+Pastikan tab `RAW` dan `FLIGHT_RAW` sudah ada:
+
+```bash
+npm run sheets:ensure
+```
+
+Kirim pesan mentah dan movement rows yang belum tersinkron satu kali:
 
 ```bash
 npm run sheets:sync
@@ -486,7 +512,7 @@ Status sinkronisasi disimpan di:
 data/google-sheets-movement-sync-state.json
 ```
 
-Hapus file status ini hanya jika memang ingin menambahkan ulang semua movement rows.
+Hapus file status ini hanya jika memang ingin menambahkan ulang semua row `RAW` dan `FLIGHT_RAW`.
 
 ## Menjalankan Semua Worker
 

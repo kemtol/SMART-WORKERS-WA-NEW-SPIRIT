@@ -1,6 +1,24 @@
-const DEFAULT_SHEET_NAME = 'Movements_Internal';
+const DEFAULT_SHEET_NAME = 'FLIGHT_RAW';
 const DEFAULT_SPREADSHEET_ID = '';
-const HEADERS = [
+
+const RAW_HEADERS = [
+  'raw_message_id',
+  'dedupe_key',
+  'message_id',
+  'remote_jid',
+  'group_name',
+  'sender_jid',
+  'from_me',
+  'message_timestamp',
+  'message_timestamp_iso',
+  'message_type',
+  'text',
+  'source',
+  'received_at',
+  'payload_json',
+];
+
+const FLIGHT_RAW_HEADERS = [
   'movement_id',
   'raw_message_id',
   'message_timestamp_iso',
@@ -53,6 +71,14 @@ const HEADERS = [
   'total_load_kg',
   'remark',
   'parse_confidence',
+  'deepclean_status',
+  'deepclean_force_check',
+  'deepclean_requested_at',
+  'deepcleaned_at',
+  'deepclean_prompt_version',
+  'deepclean_model',
+  'deepclean_error',
+  'flight_ops_id',
   'source_text',
 ];
 
@@ -80,12 +106,16 @@ function doPost(event) {
     });
   }
 
+  if (payload.action === 'ensureSheets') {
+    return ensureSheets_(spreadsheet, payload.sheets || defaultSheets_());
+  }
+
   if (payload.action === 'deleteSheets') {
     return deleteSheets_(spreadsheet, payload.deleteSheets || [], payload.keepSheetName || DEFAULT_SHEET_NAME);
   }
 
   const sheetName = payload.sheetName || DEFAULT_SHEET_NAME;
-  const headers = payload.headers || HEADERS;
+  const headers = payload.headers || defaultHeadersForSheet_(sheetName);
   const rows = payload.rows || [];
   const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
 
@@ -96,6 +126,40 @@ function doPost(event) {
   }
 
   return json_({ ok: true, sheetName, appended: rows.length });
+}
+
+function defaultSheets_() {
+  return [
+    { name: 'RAW', headers: RAW_HEADERS },
+    { name: 'FLIGHT_RAW', headers: FLIGHT_RAW_HEADERS },
+  ];
+}
+
+function defaultHeadersForSheet_(sheetName) {
+  if (sheetName === 'RAW') {
+    return RAW_HEADERS;
+  }
+  return FLIGHT_RAW_HEADERS;
+}
+
+function ensureSheets_(spreadsheet, sheets) {
+  const ensured = [];
+  sheets.forEach((spec) => {
+    const sheetName = spec.name || spec.sheetName;
+    if (!sheetName) {
+      return;
+    }
+    const headers = spec.headers || defaultHeadersForSheet_(sheetName);
+    const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
+    ensureHeaders_(sheet, headers);
+    ensured.push(sheetName);
+  });
+
+  return json_({
+    ok: true,
+    ensured,
+    remaining: spreadsheet.getSheets().map((sheet) => sheet.getName()),
+  });
 }
 
 function deleteSheets_(spreadsheet, sheetNames, keepSheetName) {
