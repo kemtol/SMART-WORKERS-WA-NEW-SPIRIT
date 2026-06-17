@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 
 GROUP_NAME="${WHATSAPP_GROUP_NAME:-New Spirit}"
 AUTH_DIR="${WHATSAPP_AUTH_DIR:-.runtime-auth/listener}"
+RESTART_DELAY_SECONDS="${WHATSAPP_RESTART_DELAY_SECONDS:-3}"
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<EOF
@@ -15,6 +16,7 @@ Usage:
 Env opsional:
   WHATSAPP_GROUP_NAME="New Spirit"
   WHATSAPP_AUTH_DIR=".runtime-auth/listener"
+  WHATSAPP_RESTART_DELAY_SECONDS="3"
 EOF
   exit 0
 fi
@@ -38,4 +40,11 @@ echo "Scan QR yang muncul dengan:"
 echo "  WhatsApp -> Linked devices -> Link a device"
 echo
 
-exec node src/listen-new-messages.js --group-name "$GROUP_NAME" "$@"
+while true; do
+  node src/listen-new-messages.js --auth-dir "$AUTH_DIR" --group-name "$GROUP_NAME" "$@"
+  code=$?
+  echo
+  echo "Listener exited with code $code. Restarting in ${RESTART_DELAY_SECONDS}s..."
+  echo
+  sleep "$RESTART_DELAY_SECONDS"
+done
