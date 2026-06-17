@@ -18,6 +18,7 @@
     "sheets:delete-legacy": "python3 app/google_sheets_sync.py --delete-legacy-sheets",
     "sheets:sync": "python3 app/google_sheets_sync.py --once",
     "sheets:sync:loop": "bash bin/run-sheets-sync-loop.sh",
+    "legacy:import-movement-internal": "python3 app/import_legacy_movement_internal.py",
     "parse-export": "node src/parse-export.js",
     "last10-export": "node src/parse-export.js --last 10 --pretty"
   },
