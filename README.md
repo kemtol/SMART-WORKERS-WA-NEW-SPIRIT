@@ -370,6 +370,14 @@ Schedules
 
 Gunakan nomor WhatsApp khusus worker. Jangan gabungkan sesi perangkat tertaut worker ini dengan WhatsApp Web lain yang aktif untuk kebutuhan berbeda.
 
+Cara paling sederhana:
+
+```bash
+./connect.sh
+```
+
+Script ini akan menampilkan QR di terminal. Scan dengan WhatsApp sampai worker masuk status `listening`.
+
 Jalankan sekali:
 
 ```bash
