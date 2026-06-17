@@ -377,7 +377,7 @@ Cara paling sederhana:
 ```
 
 Script ini akan menampilkan QR di terminal. Scan dengan WhatsApp sampai worker masuk status `listening`.
-Jika setelah scan muncul `Stream Errored (restart required)`, biarkan script berjalan. `connect.sh` akan restart otomatis. Jika login belum selesai, script akan membersihkan auth sementara dan membuat QR baru.
+Jika setelah scan muncul `Stream Errored (restart required)`, biarkan script berjalan. `connect.sh` akan restart otomatis dan memakai sesi yang sama. Gunakan `./connect.sh --reset` hanya kalau ingin paksa scan ulang dari awal.
 
 Jalankan sekali:
 
