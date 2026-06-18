@@ -112,6 +112,9 @@ FLIGHT_RAW_HEADERS = [
     "deepclean_error",
     "flight_ops_id",
     "source_text",
+    "pic_name",
+    "sic_name",
+    "crew_text",
 ]
 
 FLIGHT_OPS_HEADERS = [
@@ -124,6 +127,9 @@ FLIGHT_OPS_HEADERS = [
     "registration",
     "aircraft_type",
     "flight_seq",
+    "pic_name",
+    "sic_name",
+    "crew_text",
     "leg_origin_code",
     "leg_destination_code",
     "route_full",
@@ -262,7 +268,10 @@ def get_flight_raw_rows(db_path, after_id, limit):
               fm.total_load_kg,
               fm.remark,
               fm.parse_confidence,
-              rm.text AS source_text
+              rm.text AS source_text,
+              fm.pic_name,
+              fm.sic_name,
+              fm.crew_text
             FROM flight_movements fm
             JOIN raw_messages rm ON rm.id = fm.raw_message_id
             WHERE fm.id > ?
@@ -361,6 +370,70 @@ def delete_legacy_sheets(args):
         args.spreadsheet_id,
     )
     print(json.dumps({"ok": True, "status": "legacy_deleted", "webhook": result}, ensure_ascii=False))
+
+
+def replace_flight_raw_sheet(args):
+    require_webhook_url(args)
+    deleted = post_payload(
+        args.webhook_url,
+        {
+            "token": args.token,
+            "action": "deleteSheets",
+            "deleteSheets": [args.flight_raw_sheet_name],
+            "keepSheetName": args.raw_sheet_name,
+        },
+        args.timeout_seconds,
+        args.spreadsheet_id,
+    )
+    ensured = post_payload(
+        args.webhook_url,
+        {
+            "token": args.token,
+            "action": "ensureSheets",
+            "sheets": [
+                {"name": args.flight_raw_sheet_name, "headers": FLIGHT_RAW_HEADERS},
+            ],
+        },
+        args.timeout_seconds,
+        args.spreadsheet_id,
+    )
+
+    state = load_state(args.state)
+    state["last_movement_id"] = 0
+    save_state(args.state, state)
+
+    total = 0
+    while True:
+        state = load_state(args.state)
+        rows = get_flight_raw_rows(args.db, state["last_movement_id"], args.batch_size)
+        if not rows:
+            break
+        synced = sync_dataset(
+            args,
+            state,
+            "last_movement_id",
+            args.flight_raw_sheet_name,
+            FLIGHT_RAW_HEADERS,
+            rows,
+            "movement_id",
+        )
+        total += synced["rows"]
+        if synced["rows"] < args.batch_size:
+            break
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "status": "flight_raw_replaced",
+                "rows": total,
+                "deleted": deleted,
+                "ensured": ensured,
+                "last_movement_id": load_state(args.state)["last_movement_id"],
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def sync_dataset(args, state, state_key, sheet_name, headers, rows, id_key):
@@ -485,6 +558,7 @@ def main():
     parser.add_argument("--skip-flight-raw", action="store_true")
     parser.add_argument("--ensure-sheets", action="store_true")
     parser.add_argument("--delete-legacy-sheets", action="store_true")
+    parser.add_argument("--replace-flight-raw", action="store_true")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -497,7 +571,11 @@ def main():
         delete_legacy_sheets(args)
         return
 
-    if args.once:
+    if args.replace_flight_raw:
+        replace_flight_raw_sheet(args)
+        return
+
+    if args.once or args.dry_run:
         sync_once(args)
         return
 

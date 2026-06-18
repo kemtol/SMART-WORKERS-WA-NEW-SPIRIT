@@ -122,6 +122,16 @@ FLIGHT_OPS  dataset gold: hasil pembersihan AI dan validasi
 
 `FLIGHT_OPS` adalah dataset final untuk kebutuhan operasional. Baris hanya boleh masuk ke sini setelah melewati pembersihan AI dan gerbang validasi.
 
+Field crew yang dipakai di silver dan gold:
+
+```text
+pic_name
+sic_name
+crew_text
+```
+
+`pic_name` diambil dari label `PIC`, `sic_name` dari label `SIC`, dan `crew_text` menyimpan ringkasan crew yang dekat dengan teks sumber. Field ini biasanya tersedia di pesan `MVT Dept`; pada pesan arrival field ini boleh kosong.
+
 ### Alur E2E Target
 
 ```text
@@ -248,6 +258,9 @@ movement_type
 registration
 aircraft_type
 flight_seq
+pic_name
+sic_name
+crew_text
 leg_origin_code
 leg_destination_code
 route_full
@@ -670,6 +683,14 @@ Jalankan sinkronisasi terus-menerus:
 ```bash
 npm run sheets:sync:loop
 ```
+
+Jika schema `FLIGHT_RAW` berubah dan tab perlu dibangun ulang dari SQLite lokal:
+
+```bash
+npm run sheets:replace-flight-raw
+```
+
+Command ini menghapus tab `FLIGHT_RAW`, membuatnya lagi dengan header terbaru, lalu mengisi ulang semua movement dari `data/ops_messages.sqlite3`. Jalankan saat sync loop sedang berhenti agar tidak ada dua proses yang menulis Google Sheet bersamaan. Gunakan hanya jika sudah yakin SQLite lokal adalah sumber data yang benar untuk silver dataset.
 
 Status sinkronisasi disimpan di:
 

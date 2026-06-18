@@ -170,6 +170,9 @@ class Store:
                   registration TEXT,
                   aircraft_type TEXT,
                   flight_seq TEXT,
+                  pic_name TEXT,
+                  sic_name TEXT,
+                  crew_text TEXT,
                   leg_index INTEGER,
                   route_full TEXT,
                   leg_origin_code TEXT,
@@ -224,6 +227,21 @@ class Store:
                 CREATE INDEX IF NOT EXISTS idx_flight_movements_operation_date ON flight_movements(operation_date);
                 """
             )
+            self.ensure_columns(
+                conn,
+                "flight_movements",
+                {
+                    "pic_name": "TEXT",
+                    "sic_name": "TEXT",
+                    "crew_text": "TEXT",
+                },
+            )
+
+    def ensure_columns(self, conn, table, columns):
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, column_type in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {column_type}")
 
     def insert_movements(self, conn, raw_message_id, text, now):
         movements = parse_movements(text, self.airport_mapping)
@@ -232,7 +250,7 @@ class Store:
                 """
                 INSERT OR IGNORE INTO flight_movements (
                   raw_message_id, movement_index, movement_type, operation_date, registration,
-                  aircraft_type, flight_seq, leg_index, route_full,
+                  aircraft_type, flight_seq, pic_name, sic_name, crew_text, leg_index, route_full,
                   leg_origin_code, leg_origin_name, leg_origin_icao, leg_origin_iata,
                   leg_destination_code, leg_destination_name, leg_destination_icao, leg_destination_iata,
                   from_place, from_code, from_name, from_icao, from_iata,
@@ -244,7 +262,8 @@ class Store:
                   remark, parse_confidence, created_at
                 ) VALUES (
                   ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                  ?, ?, ?
                 )
                 """,
                 (
@@ -255,6 +274,9 @@ class Store:
                     movement.get("registration"),
                     movement.get("aircraft_type"),
                     movement.get("flight_seq"),
+                    movement.get("pic_name"),
+                    movement.get("sic_name"),
+                    movement.get("crew_text"),
                     movement.get("leg_index"),
                     movement.get("route_full"),
                     movement.get("leg_origin_code"),

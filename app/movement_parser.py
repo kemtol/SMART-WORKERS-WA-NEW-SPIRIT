@@ -78,6 +78,25 @@ def empty_to_none(value):
     return None if cleaned in {"", "-", ":", ":-"} else cleaned
 
 
+def extract_crew(text):
+    pic = first_match(r"(?im)^PIC[ \t]*:?[ \t]*([^\n]+)$", text)
+    sic = first_match(r"(?im)^(?:SIC|FIRST[ \t]+OFFICER|F/O)[ \t]*:?[ \t]*([^\n]+)$", text)
+    pic = empty_to_none(pic)
+    sic = empty_to_none(sic)
+
+    lines = []
+    if pic:
+        lines.append(f"PIC: {pic}")
+    if sic:
+        lines.append(f"SIC: {sic}")
+
+    return {
+        "pic_name": pic,
+        "sic_name": sic,
+        "crew_text": "\n".join(lines) if lines else None,
+    }
+
+
 def parse_operation_date(text):
     match = re.search(
         r"\b(\d{1,2})\s+(JANUARI|FEBRUARI|MARET|APRIL|MEI|JUNI|JULI|AGUSTUS|SEPTEMBER|OKTOBER|NOVEMBER|DESEMBER)\s+(\d{4})\b",
@@ -210,7 +229,7 @@ def base_fields(text, mapping):
     cargo_text, cargo_kg = extract_load(r"(?im)^(?:CGO|CARGO)[ \t]*:?[ \t]*([^\n]+)$", text)
     total_raw, total_load_kg = extract_load(r"(?im)^(?:TOTAL|TTL)[ \t]+LOAD[ \t]*:?[ \t]*([^\n]+)$", text)
 
-    return {
+    result = {
         "operation_date": parse_operation_date(text),
         "registration": f"PK-{registration.upper()}" if registration else None,
         "aircraft_type": normalize_aircraft_type(aircraft),
@@ -223,6 +242,8 @@ def base_fields(text, mapping):
         "total_load_kg": total_load_kg,
         "remark": empty_to_none(first_match(r"(?im)^REMARK[ \t]*:?[ \t]*([^\n]+)$", text)),
     }
+    result.update(extract_crew(text))
+    return result
 
 
 def parse_departure(text, mapping):

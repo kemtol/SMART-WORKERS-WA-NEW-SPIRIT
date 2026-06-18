@@ -80,6 +80,9 @@ const FLIGHT_RAW_HEADERS = [
   'deepclean_error',
   'flight_ops_id',
   'source_text',
+  'pic_name',
+  'sic_name',
+  'crew_text',
 ];
 
 const FLIGHT_OPS_HEADERS = [
@@ -92,6 +95,9 @@ const FLIGHT_OPS_HEADERS = [
   'registration',
   'aircraft_type',
   'flight_seq',
+  'pic_name',
+  'sic_name',
+  'crew_text',
   'leg_origin_code',
   'leg_destination_code',
   'route_full',
@@ -151,9 +157,10 @@ function doPost(event) {
   const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
 
   ensureHeaders_(sheet, headers);
+  const sheetHeaders = readHeaders_(sheet);
   if (rows.length > 0) {
-    const values = rows.map((row) => headers.map((header) => row[header] == null ? '' : row[header]));
-    sheet.getRange(sheet.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
+    const values = rows.map((row) => sheetHeaders.map((header) => row[header] == null ? '' : row[header]));
+    sheet.getRange(sheet.getLastRow() + 1, 1, values.length, sheetHeaders.length).setValues(values);
   }
 
   return json_({ ok: true, sheetName, appended: rows.length });
@@ -239,11 +246,26 @@ function ensureHeaders_(sheet, headers) {
     return;
   }
 
-  const current = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  const currentWidth = Math.max(sheet.getLastColumn(), headers.length);
+  const current = sheet.getRange(1, 1, 1, currentWidth).getValues()[0];
   const isEmpty = current.every((value) => value === '');
   if (isEmpty) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return;
   }
+
+  const existing = new Set(current.filter((value) => value !== ''));
+  const missing = headers.filter((header) => !existing.has(header));
+  if (missing.length > 0) {
+    sheet.getRange(1, sheet.getLastColumn() + 1, 1, missing.length).setValues([missing]);
+  }
+}
+
+function readHeaders_(sheet) {
+  if (sheet.getLastColumn() === 0) {
+    return [];
+  }
+  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 }
 
 function json_(payload) {

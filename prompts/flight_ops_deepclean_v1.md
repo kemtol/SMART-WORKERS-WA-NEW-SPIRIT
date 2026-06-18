@@ -82,6 +82,9 @@ Balas dengan satu JSON object valid. Jangan bungkus dengan markdown.
   "registration": "PK-SNP",
   "aircraft_type": "C208B-EX",
   "flight_seq": "02",
+  "pic_name": null,
+  "sic_name": null,
+  "crew_text": null,
   "leg_origin_code": "PCU",
   "leg_destination_code": "PKY",
   "route_full": "PCU-PKY",
@@ -120,6 +123,9 @@ movement_type
 registration
 aircraft_type
 flight_seq
+pic_name
+sic_name
+crew_text
 leg_origin_code
 leg_destination_code
 route_full
@@ -195,6 +201,13 @@ Normalisasi menjadi string dua digit jika memungkinkan:
 
 - `2` -> `"02"`
 - `02` -> `"02"`
+
+### crew
+
+- `pic_name` diambil dari label `PIC`, contoh `PIC : Capt.PCO` menjadi `"Capt.PCO"`.
+- `sic_name` diambil dari label `SIC`, `F/O`, atau `FIRST OFFICER`.
+- `crew_text` berisi ringkasan crew yang tetap dekat dengan sumber, contoh `"PIC: Capt.PCO\nSIC: Fo.WRJ"`.
+- Jangan menebak crew jika tidak ada di `source_text`. Untuk arrival message yang tidak menyebut crew, isi `null`.
 
 ### route dan airport
 
