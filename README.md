@@ -14,6 +14,8 @@ Yang sudah ada di repo:
 - Parser berbasis aturan untuk pesan `MVT Dept` dan `Mvt Arrival`.
 - Sinkronisasi Google Sheets ke tab bronze/silver: `RAW` dan `FLIGHT_RAW`.
 - Script migrasi data operasional lokal.
+- Command suite worker: `./connect.sh`, `./status.sh`, dan `./stop.sh`.
+- Systemd user service untuk menjaga worker tetap hidup dan auto-start setelah reboot.
 
 Yang belum menjadi implementasi penuh:
 
@@ -35,6 +37,61 @@ Grup WhatsApp New Spirit
 ```
 
 `RAW` adalah tab bronze untuk pesan mentah. `FLIGHT_RAW` adalah tab silver untuk hasil parser berbasis aturan. `Movements_Internal` adalah tab legacy dan tidak dipakai lagi.
+
+## PRD: Lifecycle Worker WhatsApp
+
+### Tujuan Operasional
+
+Worker harus bisa dijalankan oleh tim Ops dengan command sederhana, tanpa perlu menjaga terminal tetap terbuka setelah koneksi WhatsApp berhasil.
+
+Command utama:
+
+```bash
+./connect.sh
+```
+
+Requirement lifecycle:
+
+- `./connect.sh` adalah entrypoint utama untuk koneksi dan start worker.
+- Jika belum ada sesi WhatsApp valid, `./connect.sh` harus menampilkan QR di terminal.
+- Setelah QR discan dan koneksi tervalidasi, proses operasional harus detach ke background.
+- Worker yang harus berjalan adalah ingest service, Google Sheets sync, dan WhatsApp listener.
+- Setiap pemanggilan `./connect.sh` harus stop/kill worker lama dari repo ini, lalu start ulang stack dari awal.
+- Jika auth WhatsApp rusak atau session logout dari sisi WhatsApp, user menjalankan `./connect.sh --reset` untuk scan QR baru.
+- Worker harus auto-restart jika crash atau koneksi network putus sementara.
+- Worker harus tahan reboot server selama systemd user dan linger aktif.
+- `./stop.sh` harus menghentikan semua worker dan disable auto-start.
+- `./status.sh` harus menampilkan status systemd, proses fallback/manual, health ingest, status listener, dan status sync Google Sheets.
+
+### Perilaku Command
+
+`./connect.sh` melakukan urutan ini:
+
+```text
+1. Stop systemd service lama jika ada.
+2. Kill proses manual/fallback lama dari repo ini.
+3. Jika --reset, hapus auth WhatsApp listener dan QR lama.
+4. Jalankan bootstrap WhatsApp di foreground agar QR terlihat di terminal.
+5. Setelah koneksi valid, start semua worker di background.
+6. Jika systemd user tersedia, tulis service, enable auto-start, dan start via systemd.
+7. Jika systemd user tidak tersedia, gunakan fallback detached background.
+```
+
+Fallback detached background tetap tahan saat terminal ditutup, tetapi tidak tahan reboot. Untuk requirement tahan reboot, systemd user harus tersedia dan linger harus aktif. Script akan mencoba mengaktifkan linger otomatis. Jika gagal, jalankan sekali:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+### Kriteria Penerimaan Lifecycle
+
+Lifecycle worker dianggap benar jika:
+
+- User bisa menjalankan `./connect.sh`, scan QR, lalu terminal bisa ditutup tanpa mematikan worker.
+- Setelah reboot, worker hidup lagi otomatis tanpa scan QR selama session WhatsApp masih valid.
+- Jika WhatsApp logout atau linked device dicabut, status menunjukkan perlu reconnect dan user bisa menjalankan `./connect.sh --reset`.
+- `./status.sh` cukup untuk melihat apakah ingest, sync, dan listener sedang hidup.
+- `./stop.sh` benar-benar menghentikan worker dan mencegah auto-start berikutnya sampai `./connect.sh` dijalankan lagi.
 
 ## PRD: Dataset Flight Ops Hasil Pembersihan AI
 
@@ -378,18 +435,78 @@ Movements
 Schedules
 ```
 
-## Menjalankan Listener WhatsApp
+## Command Suite Worker
 
 Gunakan nomor WhatsApp khusus worker. Jangan gabungkan sesi perangkat tertaut worker ini dengan WhatsApp Web lain yang aktif untuk kebutuhan berbeda.
 
-Cara paling sederhana:
+Start atau reconnect semua worker:
 
 ```bash
 ./connect.sh
 ```
 
-Script ini akan menampilkan QR di terminal. Scan dengan WhatsApp sampai worker masuk status `listening`.
-Jika setelah scan muncul `Stream Errored (restart required)`, biarkan script berjalan. `connect.sh` akan restart otomatis dan memakai sesi yang sama. Gunakan `./connect.sh --reset` hanya kalau ingin paksa scan ulang dari awal.
+Command ini akan menghentikan worker lama, menampilkan QR jika diperlukan, lalu menjalankan semua proses di background. Setelah berhasil, terminal boleh ditutup.
+
+Paksa scan QR ulang:
+
+```bash
+./connect.sh --reset
+```
+
+Cek status:
+
+```bash
+./status.sh
+```
+
+Stop semua worker dan disable auto-start:
+
+```bash
+./stop.sh
+```
+
+Command `./connect.sh` akan mencoba memakai systemd user agar worker tahan reboot. Jika systemd user tidak tersedia di session tersebut, script tetap menjalankan fallback detached background. Fallback ini cukup untuk terminal/Codex session mati, tetapi tidak hidup lagi otomatis setelah reboot.
+
+Install atau update systemd user service tanpa start worker:
+
+```bash
+npm run workers:install-systemd
+```
+
+Command npm ekuivalen:
+
+```bash
+npm run workers:connect
+npm run workers:status
+npm run workers:stop
+```
+
+Status utama ada di:
+
+```text
+data/listener-status.json
+data/google-sheets-movement-sync-state.json
+```
+
+Log fallback jika systemd user tidak tersedia:
+
+```text
+data/ingest-loop.log
+data/sheets-sync-loop.log
+data/listener-loop.log
+```
+
+Log systemd jika service aktif:
+
+```bash
+journalctl --user -u new-spirit-listener.service -f
+journalctl --user -u new-spirit-ingest.service -f
+journalctl --user -u new-spirit-sheets-sync.service -f
+```
+
+## Mode Debug Manual
+
+Command di bawah hanya untuk debugging. Operasional harian harus memakai `./connect.sh`.
 
 Jalankan sekali:
 
@@ -564,7 +681,13 @@ Hapus file status ini hanya jika memang ingin menambahkan ulang semua row `RAW` 
 
 ## Menjalankan Semua Worker
 
-Jalankan di terminal terpisah:
+Untuk operasi normal, gunakan:
+
+```bash
+./connect.sh
+```
+
+Cara lama di bawah hanya untuk debugging karena terminal harus tetap dijaga manual:
 
 ```bash
 npm run ingest:loop
