@@ -29,6 +29,7 @@ DEFAULT_STATE = os.environ.get("OPS_SHEETS_STATE", "data/google-sheets-movement-
 DEFAULT_RAW_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_RAW_TAB", "RAW")
 DEFAULT_FLIGHT_RAW_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_FLIGHT_RAW_TAB", "FLIGHT_RAW")
 DEFAULT_FLIGHT_OPS_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_FLIGHT_OPS_TAB", "FLIGHT_OPS")
+DEFAULT_FLIGHT_TIMELINE_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_FLIGHT_TIMELINE_TAB", "FLIGHT_TIMELINE")
 DEFAULT_WEBHOOK_URL = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL")
 DEFAULT_TOKEN = os.environ.get("GOOGLE_SHEETS_WEBHOOK_TOKEN")
 DEFAULT_SPREADSHEET_ID = os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID")
@@ -151,9 +152,67 @@ FLIGHT_OPS_HEADERS = [
     "deepclean_model",
 ]
 
+FLIGHT_TIMELINE_HEADERS = [
+    "timeline_sort_key",
+    "operation_date",
+    "registration",
+    "flight_seq",
+    "timeline_kind",
+    "movement_type",
+    "leg_index",
+    "event_time",
+    "event_time_source",
+    "origin_code",
+    "origin_name",
+    "origin_icao",
+    "origin_iata",
+    "destination_code",
+    "destination_name",
+    "destination_icao",
+    "destination_iata",
+    "route_leg",
+    "route_full",
+    "next_route",
+    "takeoff_time",
+    "eta_time",
+    "ata_time",
+    "pic_name",
+    "sic_name",
+    "crew_text",
+    "pax",
+    "pax_weight_kg",
+    "baggage_kg",
+    "cargo_kg",
+    "total_load_kg",
+    "parse_confidence",
+    "message_timestamp_iso",
+    "raw_message_id",
+    "movement_id",
+]
+
 
 def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def first_value(*values):
+    for value in values:
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def message_time(timestamp_iso):
+    if not timestamp_iso:
+        return None
+    return timestamp_iso[11:16] if len(timestamp_iso) >= 16 else None
+
+
+def numeric_text(value, width):
+    try:
+        return f"{int(value):0{width}d}"
+    except (TypeError, ValueError):
+        return "9" * width
 
 
 def load_state(path):
@@ -165,6 +224,7 @@ def load_state(path):
     return {
         "last_raw_message_id": int(state.get("last_raw_message_id", 0) or 0),
         "last_movement_id": int(state.get("last_movement_id", 0) or 0),
+        "last_timeline_movement_id": int(state.get("last_timeline_movement_id", 0) or 0),
     }
 
 
@@ -300,6 +360,162 @@ def get_flight_raw_rows(db_path, after_id, limit):
     return result
 
 
+def timeline_row_from_movement(row):
+    movement_type = row["movement_type"]
+    operation_date = first_value(row["operation_date"], row["message_timestamp_iso"][:10] if row["message_timestamp_iso"] else None)
+
+    if movement_type == "arrival":
+        timeline_kind = "actual_arrival"
+        kind_order = "2"
+        event_time = first_value(row["ata_time"], message_time(row["message_timestamp_iso"]))
+        event_time_source = "ata_time" if row["ata_time"] else "message_timestamp"
+        origin_code = first_value(row["from_code"], row["leg_origin_code"])
+        origin_name = first_value(row["from_name"], row["from_place"], row["leg_origin_name"])
+        origin_icao = first_value(row["from_icao"], row["leg_origin_icao"])
+        origin_iata = first_value(row["from_iata"], row["leg_origin_iata"])
+        destination_code = first_value(row["arrival_airport_code"], row["leg_destination_code"])
+        destination_name = first_value(row["arrival_airport_name"], row["leg_destination_name"])
+        destination_icao = first_value(row["arrival_airport_icao"], row["leg_destination_icao"])
+        destination_iata = first_value(row["arrival_airport_iata"], row["leg_destination_iata"])
+        leg_order = "999"
+    else:
+        timeline_kind = "planned_leg"
+        kind_order = "1"
+        event_time = first_value(row["takeoff_time"], row["eta_time"], message_time(row["message_timestamp_iso"]))
+        if row["takeoff_time"]:
+            event_time_source = "takeoff_time"
+        elif row["eta_time"]:
+            event_time_source = "eta_time"
+        else:
+            event_time_source = "message_timestamp"
+        origin_code = row["leg_origin_code"]
+        origin_name = row["leg_origin_name"]
+        origin_icao = row["leg_origin_icao"]
+        origin_iata = row["leg_origin_iata"]
+        destination_code = row["leg_destination_code"]
+        destination_name = row["leg_destination_name"]
+        destination_icao = row["leg_destination_icao"]
+        destination_iata = row["leg_destination_iata"]
+        leg_order = numeric_text(row["leg_index"], 3)
+
+    origin_display = first_value(origin_code, origin_name, "")
+    destination_display = first_value(destination_code, destination_name, "")
+    route_leg = f"{origin_display}-{destination_display}" if origin_display or destination_display else None
+    sort_key = "|".join(
+        [
+            operation_date or "9999-99-99",
+            row["registration"] or "",
+            numeric_text(row["flight_seq"], 3),
+            kind_order,
+            leg_order,
+            event_time or "99:99",
+            numeric_text(row["movement_id"], 8),
+        ]
+    )
+
+    item = {
+        "timeline_sort_key": sort_key,
+        "operation_date": operation_date,
+        "registration": row["registration"],
+        "flight_seq": row["flight_seq"],
+        "timeline_kind": timeline_kind,
+        "movement_type": movement_type,
+        "leg_index": row["leg_index"],
+        "event_time": event_time,
+        "event_time_source": event_time_source,
+        "origin_code": origin_code,
+        "origin_name": origin_name,
+        "origin_icao": origin_icao,
+        "origin_iata": origin_iata,
+        "destination_code": destination_code,
+        "destination_name": destination_name,
+        "destination_icao": destination_icao,
+        "destination_iata": destination_iata,
+        "route_leg": route_leg,
+        "route_full": row["route_full"],
+        "next_route": row["next_route"],
+        "takeoff_time": row["takeoff_time"],
+        "eta_time": row["eta_time"],
+        "ata_time": row["ata_time"],
+        "pic_name": row["pic_name"],
+        "sic_name": row["sic_name"],
+        "crew_text": row["crew_text"],
+        "pax": row["pax"],
+        "pax_weight_kg": row["pax_weight_kg"],
+        "baggage_kg": row["baggage_kg"],
+        "cargo_kg": row["cargo_kg"],
+        "total_load_kg": row["total_load_kg"],
+        "parse_confidence": row["parse_confidence"],
+        "message_timestamp_iso": row["message_timestamp_iso"],
+        "raw_message_id": row["raw_message_id"],
+        "movement_id": row["movement_id"],
+    }
+    return {key: item.get(key) for key in FLIGHT_TIMELINE_HEADERS}
+
+
+def get_flight_timeline_rows(db_path, after_id=0, limit=None, sort_by_timeline=True):
+    with connect(db_path) as conn:
+        limit_clause = "" if limit is None else "LIMIT ?"
+        params = (after_id,) if limit is None else (after_id, limit)
+        rows = conn.execute(
+            f"""
+            SELECT
+              fm.id AS movement_id,
+              fm.raw_message_id,
+              rm.message_timestamp_iso,
+              fm.movement_type,
+              fm.operation_date,
+              fm.registration,
+              fm.aircraft_type,
+              fm.flight_seq,
+              fm.leg_index,
+              fm.route_full,
+              fm.leg_origin_code,
+              fm.leg_origin_name,
+              fm.leg_origin_icao,
+              fm.leg_origin_iata,
+              fm.leg_destination_code,
+              fm.leg_destination_name,
+              fm.leg_destination_icao,
+              fm.leg_destination_iata,
+              fm.from_place,
+              fm.from_code,
+              fm.from_name,
+              fm.from_icao,
+              fm.from_iata,
+              fm.arrival_airport_code,
+              fm.arrival_airport_name,
+              fm.arrival_airport_icao,
+              fm.arrival_airport_iata,
+              fm.next_route,
+              fm.takeoff_time,
+              fm.eta_time,
+              fm.ata_time,
+              fm.pic_name,
+              fm.sic_name,
+              fm.crew_text,
+              fm.pax,
+              fm.pax_weight_kg,
+              fm.baggage_kg,
+              fm.cargo_kg,
+              fm.total_load_kg,
+              fm.parse_confidence
+            FROM flight_movements fm
+            JOIN raw_messages rm ON rm.id = fm.raw_message_id
+            WHERE fm.registration IS NOT NULL
+              AND fm.id > ?
+            ORDER BY fm.id ASC
+            {limit_clause}
+            """,
+            params,
+        ).fetchall()
+
+    result = [timeline_row_from_movement(row) for row in rows]
+    if sort_by_timeline:
+        return sorted(result, key=lambda item: item["timeline_sort_key"])
+    return result
+
+
 def post_payload(webhook_url, payload, timeout, spreadsheet_id=None):
     if spreadsheet_id and "spreadsheetId" not in payload:
         payload = {**payload, "spreadsheetId": spreadsheet_id}
@@ -348,6 +564,7 @@ def ensure_sheets(args):
                 {"name": args.raw_sheet_name, "headers": RAW_HEADERS},
                 {"name": args.flight_raw_sheet_name, "headers": FLIGHT_RAW_HEADERS},
                 {"name": args.flight_ops_sheet_name, "headers": FLIGHT_OPS_HEADERS},
+                {"name": args.flight_timeline_sheet_name, "headers": FLIGHT_TIMELINE_HEADERS},
             ],
         },
         args.timeout_seconds,
@@ -436,6 +653,68 @@ def replace_flight_raw_sheet(args):
     )
 
 
+def replace_flight_timeline_sheet(args):
+    require_webhook_url(args)
+    deleted = post_payload(
+        args.webhook_url,
+        {
+            "token": args.token,
+            "action": "deleteSheets",
+            "deleteSheets": [args.flight_timeline_sheet_name],
+            "keepSheetName": args.raw_sheet_name,
+        },
+        args.timeout_seconds,
+        args.spreadsheet_id,
+    )
+    ensured = post_payload(
+        args.webhook_url,
+        {
+            "token": args.token,
+            "action": "ensureSheets",
+            "sheets": [
+                {"name": args.flight_timeline_sheet_name, "headers": FLIGHT_TIMELINE_HEADERS},
+            ],
+        },
+        args.timeout_seconds,
+        args.spreadsheet_id,
+    )
+
+    rows = get_flight_timeline_rows(args.db)
+    total = 0
+    for start in range(0, len(rows), args.batch_size):
+        batch = rows[start : start + args.batch_size]
+        if not batch:
+            break
+        result = post_rows(
+            args.webhook_url,
+            args.token,
+            args.spreadsheet_id,
+            args.flight_timeline_sheet_name,
+            FLIGHT_TIMELINE_HEADERS,
+            batch,
+            args.timeout_seconds,
+        )
+        total += int(result.get("appended") or len(batch))
+
+    state = load_state(args.state)
+    state["last_timeline_movement_id"] = max((int(row["movement_id"]) for row in rows), default=0)
+    save_state(args.state, state)
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "status": "flight_timeline_replaced",
+                "rows": total,
+                "deleted": deleted,
+                "ensured": ensured,
+                "last_timeline_movement_id": state["last_timeline_movement_id"],
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
 def sync_dataset(args, state, state_key, sheet_name, headers, rows, id_key):
     if not rows:
         return {"sheet": sheet_name, "rows": 0, state_key: state[state_key], "status": "idle"}
@@ -457,9 +736,19 @@ def sync_once(args):
         if args.from_id is not None
         else state["last_movement_id"]
     )
+    timeline_after_id = int(
+        args.from_timeline_movement_id
+        if args.from_timeline_movement_id is not None
+        else state["last_timeline_movement_id"]
+    )
 
     raw_rows = [] if args.skip_raw else get_raw_rows(args.db, raw_after_id, args.batch_size)
     flight_raw_rows = [] if args.skip_flight_raw else get_flight_raw_rows(args.db, movement_after_id, args.batch_size)
+    flight_timeline_rows = (
+        []
+        if args.skip_flight_timeline
+        else get_flight_timeline_rows(args.db, timeline_after_id, args.batch_size, sort_by_timeline=False)
+    )
 
     if args.dry_run:
         print(
@@ -479,6 +768,12 @@ def sync_once(args):
                         "first": flight_raw_rows[0] if flight_raw_rows else None,
                         "last": flight_raw_rows[-1] if flight_raw_rows else None,
                     },
+                    "flight_timeline": {
+                        "sheet": args.flight_timeline_sheet_name,
+                        "rows": len(flight_timeline_rows),
+                        "first": flight_timeline_rows[0] if flight_timeline_rows else None,
+                        "last": flight_timeline_rows[-1] if flight_timeline_rows else None,
+                    },
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -486,7 +781,7 @@ def sync_once(args):
         )
         return len(raw_rows) + len(flight_raw_rows)
 
-    if not raw_rows and not flight_raw_rows:
+    if not raw_rows and not flight_raw_rows and not flight_timeline_rows:
         print(
             json.dumps(
                 {
@@ -494,6 +789,7 @@ def sync_once(args):
                     "status": "idle",
                     "last_raw_message_id": raw_after_id,
                     "last_movement_id": movement_after_id,
+                    "last_timeline_movement_id": timeline_after_id,
                 }
             )
         )
@@ -533,7 +829,25 @@ def sync_once(args):
             "status": "idle",
         }
 
-    total = synced["raw"]["rows"] + synced["flight_raw"]["rows"]
+    if flight_timeline_rows:
+        synced["flight_timeline"] = sync_dataset(
+            args,
+            state,
+            "last_timeline_movement_id",
+            args.flight_timeline_sheet_name,
+            FLIGHT_TIMELINE_HEADERS,
+            flight_timeline_rows,
+            "movement_id",
+        )
+    else:
+        synced["flight_timeline"] = {
+            "sheet": args.flight_timeline_sheet_name,
+            "rows": 0,
+            "last_timeline_movement_id": state["last_timeline_movement_id"],
+            "status": "idle",
+        }
+
+    total = synced["raw"]["rows"] + synced["flight_raw"]["rows"] + synced["flight_timeline"]["rows"]
     print(json.dumps({"ok": True, "status": "synced", "rows": total, **synced}, ensure_ascii=False))
     return total
 
@@ -548,17 +862,21 @@ def main():
     parser.add_argument("--raw-sheet-name", default=DEFAULT_RAW_SHEET_NAME)
     parser.add_argument("--flight-raw-sheet-name", default=DEFAULT_FLIGHT_RAW_SHEET_NAME)
     parser.add_argument("--flight-ops-sheet-name", default=DEFAULT_FLIGHT_OPS_SHEET_NAME)
+    parser.add_argument("--flight-timeline-sheet-name", default=DEFAULT_FLIGHT_TIMELINE_SHEET_NAME)
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--interval-seconds", type=int, default=15)
     parser.add_argument("--timeout-seconds", type=int, default=30)
     parser.add_argument("--from-raw-id", type=int, default=None)
     parser.add_argument("--from-movement-id", type=int, default=None)
+    parser.add_argument("--from-timeline-movement-id", type=int, default=None)
     parser.add_argument("--from-id", type=int, default=None, help="Legacy alias for --from-movement-id")
     parser.add_argument("--skip-raw", action="store_true")
     parser.add_argument("--skip-flight-raw", action="store_true")
+    parser.add_argument("--skip-flight-timeline", action="store_true")
     parser.add_argument("--ensure-sheets", action="store_true")
     parser.add_argument("--delete-legacy-sheets", action="store_true")
     parser.add_argument("--replace-flight-raw", action="store_true")
+    parser.add_argument("--replace-flight-timeline", action="store_true")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -573,6 +891,10 @@ def main():
 
     if args.replace_flight_raw:
         replace_flight_raw_sheet(args)
+        return
+
+    if args.replace_flight_timeline:
+        replace_flight_timeline_sheet(args)
         return
 
     if args.once or args.dry_run:

@@ -116,11 +116,19 @@ FLIGHT_RAW  dataset silver: hasil parser berbasis aturan
 FLIGHT_OPS  dataset gold: hasil pembersihan AI dan validasi
 ```
 
+Tab tambahan untuk konsumsi harian Ops:
+
+```text
+FLIGHT_TIMELINE  view rotasi pesawat yang sudah diurutkan untuk melihat kronologi per registration
+```
+
 `RAW` hanya boleh ditambah. Isi tab ini tidak boleh diedit manual karena menjadi sumber kebenaran.
 
 `FLIGHT_RAW` adalah hasil parsing awal. Data di sini bisa belum sempurna, tetapi setiap baris harus tetap bisa ditelusuri ke `raw_message_id`, `movement_id`, dan versi parser.
 
 `FLIGHT_OPS` adalah dataset final untuk kebutuhan operasional. Baris hanya boleh masuk ke sini setelah melewati pembersihan AI dan gerbang validasi.
+
+`FLIGHT_TIMELINE` adalah view turunan dari `FLIGHT_RAW`. Tab ini tidak menjadi sumber kebenaran baru; ia hanya memudahkan user melihat urutan terbang pesawat per hari dan per registration. Untuk membaca kronologi, sort ascending kolom `timeline_sort_key`, lalu filter `operation_date` dan `registration`.
 
 Field crew yang dipakai di silver dan gold:
 
@@ -424,6 +432,7 @@ GOOGLE_SHEETS_SPREADSHEET_ID=id-google-sheet-tujuan
 GOOGLE_SHEETS_RAW_TAB=RAW
 GOOGLE_SHEETS_FLIGHT_RAW_TAB=FLIGHT_RAW
 GOOGLE_SHEETS_FLIGHT_OPS_TAB=FLIGHT_OPS
+GOOGLE_SHEETS_FLIGHT_TIMELINE_TAB=FLIGHT_TIMELINE
 ```
 
 File `config/google-sheets.env` tidak boleh di-commit.
@@ -666,7 +675,7 @@ Karena folder `data/` di-ignore, master internal tidak ikut ke GitHub.
 
 ## Sinkronisasi ke Google Sheets
 
-Pastikan tab `RAW`, `FLIGHT_RAW`, dan `FLIGHT_OPS` sudah ada:
+Pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, dan `FLIGHT_TIMELINE` sudah ada:
 
 ```bash
 npm run sheets:ensure
@@ -691,6 +700,24 @@ npm run sheets:replace-flight-raw
 ```
 
 Command ini menghapus tab `FLIGHT_RAW`, membuatnya lagi dengan header terbaru, lalu mengisi ulang semua movement dari `data/ops_messages.sqlite3`. Jalankan saat sync loop sedang berhenti agar tidak ada dua proses yang menulis Google Sheet bersamaan. Gunakan hanya jika sudah yakin SQLite lokal adalah sumber data yang benar untuk silver dataset.
+
+Untuk membangun ulang view rotasi pesawat:
+
+```bash
+npm run sheets:replace-flight-timeline
+```
+
+`FLIGHT_TIMELINE` memakai kolom `timeline_sort_key` sebagai urutan utama. Cara baca yang disarankan di Google Sheets:
+
+```text
+1. Filter operation_date
+2. Filter registration
+3. Sort timeline_sort_key ascending
+```
+
+`timeline_kind = planned_leg` berasal dari pesan departure dan menunjukkan rencana leg, termasuk return leg. `timeline_kind = actual_arrival` berasal dari pesan arrival dan menunjukkan actual arrival/ATA.
+
+Setelah tab dibuat, sync loop reguler ikut menambahkan row baru ke `FLIGHT_TIMELINE`. Jika urutan visual di Sheet terlihat berubah karena row baru di-append di bawah, sort ulang kolom `timeline_sort_key` ascending.
 
 Status sinkronisasi disimpan di:
 

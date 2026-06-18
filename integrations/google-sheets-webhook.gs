@@ -119,6 +119,44 @@ const FLIGHT_OPS_HEADERS = [
   'deepclean_model',
 ];
 
+const FLIGHT_TIMELINE_HEADERS = [
+  'timeline_sort_key',
+  'operation_date',
+  'registration',
+  'flight_seq',
+  'timeline_kind',
+  'movement_type',
+  'leg_index',
+  'event_time',
+  'event_time_source',
+  'origin_code',
+  'origin_name',
+  'origin_icao',
+  'origin_iata',
+  'destination_code',
+  'destination_name',
+  'destination_icao',
+  'destination_iata',
+  'route_leg',
+  'route_full',
+  'next_route',
+  'takeoff_time',
+  'eta_time',
+  'ata_time',
+  'pic_name',
+  'sic_name',
+  'crew_text',
+  'pax',
+  'pax_weight_kg',
+  'baggage_kg',
+  'cargo_kg',
+  'total_load_kg',
+  'parse_confidence',
+  'message_timestamp_iso',
+  'raw_message_id',
+  'movement_id',
+];
+
 function doGet() {
   return json_({ ok: true, status: 'ready' });
 }
@@ -171,6 +209,7 @@ function defaultSheets_() {
     { name: 'RAW', headers: RAW_HEADERS },
     { name: 'FLIGHT_RAW', headers: FLIGHT_RAW_HEADERS },
     { name: 'FLIGHT_OPS', headers: FLIGHT_OPS_HEADERS },
+    { name: 'FLIGHT_TIMELINE', headers: FLIGHT_TIMELINE_HEADERS },
   ];
 }
 
@@ -180,6 +219,9 @@ function defaultHeadersForSheet_(sheetName) {
   }
   if (sheetName === 'FLIGHT_OPS') {
     return FLIGHT_OPS_HEADERS;
+  }
+  if (sheetName === 'FLIGHT_TIMELINE') {
+    return FLIGHT_TIMELINE_HEADERS;
   }
   return FLIGHT_RAW_HEADERS;
 }
