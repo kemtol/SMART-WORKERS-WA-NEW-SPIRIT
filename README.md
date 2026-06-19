@@ -667,6 +667,8 @@ airport_name
 location
 province_name
 timezone
+latitude_deg
+longitude_deg
 ```
 
 Prioritas mapping:
@@ -675,7 +677,24 @@ Prioritas mapping:
 2. `config/airport_mappings.json`
 3. fallback belum terpetakan atau teks bebas
 
-Karena folder `data/` di-ignore, master internal tidak ikut ke GitHub.
+File `data/reference/master_iata.json` sengaja dikecualikan dari ignore rule agar ikut ke GitHub sebagai master referensi. File runtime lain di folder `data/` tetap di-ignore.
+
+Untuk membuat atau refresh tab `MASTER_IATA` di Google Sheets ops dari source sheet master:
+
+```bash
+npm run master:iata:sync
+```
+
+Command ini:
+
+```text
+1. Download CSV dari source Google Sheet master IATA
+2. Normalisasi casing code, icao_code, airport_name, location, province_name
+3. Simpan hasil lokal ke data/reference/master_iata.json
+4. Replace tab MASTER_IATA di spreadsheet ops
+```
+
+Kolom koordinat `latitude_deg` dan `longitude_deg` disiapkan tetapi masih kosong sampai ada proses enrichment koordinat.
 
 ## Sinkronisasi ke Google Sheets
 

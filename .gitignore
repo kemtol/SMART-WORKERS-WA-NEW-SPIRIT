@@ -2,7 +2,10 @@
 node_modules/
 
 # Runtime state and credentials
-data/
+data/*
+!data/reference/
+data/reference/*
+!data/reference/master_iata.json
 .runtime-auth/
 config/*.env
 
