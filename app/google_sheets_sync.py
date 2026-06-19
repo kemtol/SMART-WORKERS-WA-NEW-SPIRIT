@@ -211,6 +211,19 @@ def operation_date_from_timestamp(timestamp_iso, timezone_name=DEFAULT_OPERATION
         return timestamp_iso[:10] if len(timestamp_iso) >= 10 else None
 
 
+def local_timestamp_from_timestamp(timestamp_iso, timezone_name=DEFAULT_OPERATION_TIMEZONE):
+    if not timestamp_iso:
+        return None
+    try:
+        value = timestamp_iso.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(ZoneInfo(timezone_name)).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError, OSError):
+        return timestamp_iso
+
+
 def first_value(*values):
     for value in values:
         if value not in (None, ""):
@@ -248,6 +261,17 @@ def chronology_sort_key(row, operation_date=None):
     )
 
 
+def timeline_sort_key(row):
+    return "|".join(
+        [
+            local_timestamp_from_timestamp(row["message_timestamp_iso"]) or "9999-99-99 99:99:99",
+            row["registration"] or "",
+            numeric_text(row["movement_id"], 8),
+            numeric_text(row["leg_index"], 3),
+        ]
+    )
+
+
 def load_state(path):
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -273,6 +297,12 @@ def connect(db_path):
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 30000")
     return conn
+
+
+def get_max_movement_id(db_path):
+    with connect(db_path) as conn:
+        row = conn.execute("SELECT MAX(id) AS max_id FROM flight_movements").fetchone()
+    return int(row["max_id"] or 0)
 
 
 def get_raw_rows(db_path, after_id, limit):
@@ -402,7 +432,6 @@ def timeline_row_from_movement(row):
 
     if movement_type == "arrival":
         timeline_kind = "actual_arrival"
-        kind_order = "2"
         event_time = first_value(row["ata_time"], message_time(row["message_timestamp_iso"]))
         event_time_source = "ata_time" if row["ata_time"] else "message_timestamp"
         origin_code = first_value(row["from_code"], row["leg_origin_code"])
@@ -413,17 +442,10 @@ def timeline_row_from_movement(row):
         destination_name = first_value(row["arrival_airport_name"], row["leg_destination_name"])
         destination_icao = first_value(row["arrival_airport_icao"], row["leg_destination_icao"])
         destination_iata = first_value(row["arrival_airport_iata"], row["leg_destination_iata"])
-        leg_order = "999"
     else:
-        timeline_kind = "planned_leg"
-        kind_order = "1"
-        event_time = first_value(row["takeoff_time"], row["eta_time"], message_time(row["message_timestamp_iso"]))
-        if row["takeoff_time"]:
-            event_time_source = "takeoff_time"
-        elif row["eta_time"]:
-            event_time_source = "eta_time"
-        else:
-            event_time_source = "message_timestamp"
+        timeline_kind = "actual_departure"
+        event_time = row["takeoff_time"]
+        event_time_source = "takeoff_time"
         origin_code = row["leg_origin_code"]
         origin_name = row["leg_origin_name"]
         origin_icao = row["leg_origin_icao"]
@@ -432,22 +454,11 @@ def timeline_row_from_movement(row):
         destination_name = row["leg_destination_name"]
         destination_icao = row["leg_destination_icao"]
         destination_iata = row["leg_destination_iata"]
-        leg_order = numeric_text(row["leg_index"], 3)
 
     origin_display = first_value(origin_code, origin_name, "")
     destination_display = first_value(destination_code, destination_name, "")
     route_leg = f"{origin_display}-{destination_display}" if origin_display or destination_display else None
-    sort_key = "|".join(
-        [
-            operation_date or "9999-99-99",
-            row["registration"] or "",
-            numeric_text(row["flight_seq"], 3),
-            kind_order,
-            leg_order,
-            event_time or "99:99",
-            numeric_text(row["movement_id"], 8),
-        ]
-    )
+    sort_key = timeline_sort_key(row)
 
     item = {
         "timeline_sort_key": sort_key,
@@ -540,6 +551,10 @@ def get_flight_timeline_rows(db_path, after_id=0, limit=None, sort_by_timeline=T
             JOIN raw_messages rm ON rm.id = fm.raw_message_id
             WHERE fm.registration IS NOT NULL
               AND fm.id > ?
+              AND (
+                (fm.movement_type = 'departure' AND fm.takeoff_time IS NOT NULL AND fm.takeoff_time != '')
+                OR (fm.movement_type = 'arrival' AND fm.ata_time IS NOT NULL AND fm.ata_time != '')
+              )
             ORDER BY fm.id ASC
             {limit_clause}
             """,
@@ -733,7 +748,7 @@ def replace_flight_timeline_sheet(args):
         total += int(result.get("appended") or len(batch))
 
     state = load_state(args.state)
-    state["last_timeline_movement_id"] = max((int(row["movement_id"]) for row in rows), default=0)
+    state["last_timeline_movement_id"] = get_max_movement_id(args.db)
     save_state(args.state, state)
 
     print(
@@ -815,7 +830,18 @@ def sync_once(args):
                 indent=2,
             )
         )
-        return len(raw_rows) + len(flight_raw_rows)
+        return len(raw_rows) + len(flight_raw_rows) + len(flight_timeline_rows)
+
+    if (
+        not args.skip_flight_timeline
+        and not flight_timeline_rows
+        and args.from_timeline_movement_id is None
+    ):
+        max_movement_id = get_max_movement_id(args.db)
+        if max_movement_id > state["last_timeline_movement_id"]:
+            state["last_timeline_movement_id"] = max_movement_id
+            save_state(args.state, state)
+            timeline_after_id = max_movement_id
 
     if not raw_rows and not flight_raw_rows and not flight_timeline_rows:
         print(

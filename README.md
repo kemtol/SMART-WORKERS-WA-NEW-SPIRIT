@@ -130,7 +130,7 @@ Untuk pesan arrival yang tidak membawa tanggal operasi di teks mentah, `operatio
 
 `FLIGHT_OPS` adalah dataset final untuk kebutuhan operasional. Baris hanya boleh masuk ke sini setelah melewati pembersihan AI dan gerbang validasi.
 
-`FLIGHT_TIMELINE` adalah view turunan dari `FLIGHT_RAW`. Tab ini tidak menjadi sumber kebenaran baru; ia hanya memudahkan user melihat urutan terbang pesawat per hari dan per registration. Untuk membaca kronologi, sort ascending kolom `timeline_sort_key`, lalu filter `operation_date` dan `registration`.
+`FLIGHT_TIMELINE` adalah view turunan dari `FLIGHT_RAW`. Tab ini tidak menjadi sumber kebenaran baru; ia hanya memudahkan user melihat urutan terbang aktual pesawat per hari dan per registration. Untuk membaca kronologi, filter `operation_date` dan `registration`, lalu sort ascending kolom `timeline_sort_key`.
 
 Field crew yang dipakai di silver dan gold:
 
@@ -719,7 +719,7 @@ npm run sheets:replace-flight-timeline
 3. Sort timeline_sort_key ascending
 ```
 
-`timeline_kind = planned_leg` berasal dari pesan departure dan menunjukkan rencana leg, termasuk return leg. `timeline_kind = actual_arrival` berasal dari pesan arrival dan menunjukkan actual arrival/ATA.
+`timeline_kind = actual_departure` berasal dari pesan departure yang memiliki `takeoff_time`. `timeline_kind = actual_arrival` berasal dari pesan arrival yang memiliki `ata_time`. Planned return leg dari route seperti `MKQ-EWE-MKQ` tetap tersimpan di `FLIGHT_RAW`, tetapi tidak dimasukkan ke timeline utama selama belum ada event aktualnya.
 
 Setelah tab dibuat, sync loop reguler ikut menambahkan row baru ke `FLIGHT_TIMELINE`. Jika urutan visual di Sheet terlihat berubah karena row baru di-append di bawah, sort ulang kolom `timeline_sort_key` ascending.
 
