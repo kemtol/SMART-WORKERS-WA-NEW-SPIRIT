@@ -128,6 +128,8 @@ const FLIGHT_TIMELINE_HEADERS = [
   'timeline_kind',
   'movement_type',
   'leg_index',
+  'event_datetime_local',
+  'event_datetime_utc',
   'event_time',
   'event_time_source',
   'origin_code',

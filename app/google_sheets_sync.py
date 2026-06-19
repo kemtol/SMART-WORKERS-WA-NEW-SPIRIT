@@ -6,7 +6,7 @@ import sqlite3
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 
@@ -163,6 +163,8 @@ FLIGHT_TIMELINE_HEADERS = [
     "timeline_kind",
     "movement_type",
     "leg_index",
+    "event_datetime_local",
+    "event_datetime_utc",
     "event_time",
     "event_time_source",
     "origin_code",
@@ -224,6 +226,49 @@ def local_timestamp_from_timestamp(timestamp_iso, timezone_name=DEFAULT_OPERATIO
         return timestamp_iso
 
 
+def parse_timestamp_utc(timestamp_iso):
+    if not timestamp_iso:
+        return None
+    try:
+        parsed = datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def event_datetime_utc_from_time(timestamp_iso, event_time):
+    anchor = parse_timestamp_utc(timestamp_iso)
+    if not anchor or not event_time:
+        return None
+    try:
+        hour_text, minute_text = str(event_time).split(":", 1)
+        hour = int(hour_text)
+        minute = int(minute_text)
+    except (ValueError, TypeError):
+        return None
+    if hour > 23 or minute > 59:
+        return None
+
+    candidates = []
+    for day_offset in (-1, 0, 1):
+        day = (anchor + timedelta(days=day_offset)).date()
+        candidates.append(datetime(day.year, day.month, day.day, hour, minute, tzinfo=timezone.utc))
+    return min(candidates, key=lambda value: abs((value - anchor).total_seconds()))
+
+
+def format_datetime_utc(value):
+    return value.strftime("%Y-%m-%d %H:%MZ") if value else None
+
+
+def format_datetime_local(value, timezone_name=DEFAULT_OPERATION_TIMEZONE, include_seconds=False):
+    if not value:
+        return None
+    fmt = "%Y-%m-%d %H:%M:%S" if include_seconds else "%Y-%m-%d %H:%M"
+    return value.astimezone(ZoneInfo(timezone_name)).strftime(fmt)
+
+
 def first_value(*values):
     for value in values:
         if value not in (None, ""):
@@ -261,10 +306,11 @@ def chronology_sort_key(row, operation_date=None):
     )
 
 
-def timeline_sort_key(row):
+def timeline_sort_key(row, event_datetime_utc=None):
+    event_sort_time = format_datetime_local(event_datetime_utc, include_seconds=True)
     return "|".join(
         [
-            local_timestamp_from_timestamp(row["message_timestamp_iso"]) or "9999-99-99 99:99:99",
+            event_sort_time or local_timestamp_from_timestamp(row["message_timestamp_iso"]) or "9999-99-99 99:99:99",
             row["registration"] or "",
             numeric_text(row["movement_id"], 8),
             numeric_text(row["leg_index"], 3),
@@ -458,7 +504,8 @@ def timeline_row_from_movement(row):
     origin_display = first_value(origin_code, origin_name, "")
     destination_display = first_value(destination_code, destination_name, "")
     route_leg = f"{origin_display}-{destination_display}" if origin_display or destination_display else None
-    sort_key = timeline_sort_key(row)
+    event_datetime_utc = event_datetime_utc_from_time(row["message_timestamp_iso"], event_time)
+    sort_key = timeline_sort_key(row, event_datetime_utc)
 
     item = {
         "timeline_sort_key": sort_key,
@@ -468,6 +515,8 @@ def timeline_row_from_movement(row):
         "timeline_kind": timeline_kind,
         "movement_type": movement_type,
         "leg_index": row["leg_index"],
+        "event_datetime_local": format_datetime_local(event_datetime_utc),
+        "event_datetime_utc": format_datetime_utc(event_datetime_utc),
         "event_time": event_time,
         "event_time_source": event_time_source,
         "origin_code": origin_code,

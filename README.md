@@ -130,7 +130,7 @@ Untuk pesan arrival yang tidak membawa tanggal operasi di teks mentah, `operatio
 
 `FLIGHT_OPS` adalah dataset final untuk kebutuhan operasional. Baris hanya boleh masuk ke sini setelah melewati pembersihan AI dan gerbang validasi.
 
-`FLIGHT_TIMELINE` adalah view turunan dari `FLIGHT_RAW`. Tab ini tidak menjadi sumber kebenaran baru; ia hanya memudahkan user melihat urutan terbang aktual pesawat per hari dan per registration. Untuk membaca kronologi, filter `operation_date` dan `registration`, lalu sort ascending kolom `timeline_sort_key`.
+`FLIGHT_TIMELINE` adalah view turunan dari `FLIGHT_RAW`. Tab ini tidak menjadi sumber kebenaran baru; ia hanya memudahkan user melihat urutan terbang aktual pesawat per hari dan per registration. Untuk membaca kronologi, filter `operation_date` dan `registration`, lalu sort ascending kolom `timeline_sort_key`. Kolom yang paling enak dibaca manusia adalah `event_datetime_local`, sedangkan `event_time` tetap menyimpan waktu Z dari pesan sumber.
 
 Field crew yang dipakai di silver dan gold:
 
@@ -718,6 +718,18 @@ npm run sheets:replace-flight-timeline
 2. Filter registration
 3. Sort timeline_sort_key ascending
 ```
+
+Untuk membaca hasilnya, fokus ke kolom ini:
+
+```text
+event_datetime_local
+timeline_kind
+route_leg
+event_time
+event_time_source
+```
+
+`event_datetime_local` adalah waktu event aktual dalam timezone operasi. `event_time` adalah waktu mentah dari pesan ops, biasanya waktu Z, sehingga bisa terlihat mundur tanggal jika dibaca tanpa konteks timezone.
 
 `timeline_kind = actual_departure` berasal dari pesan departure yang memiliki `takeoff_time`. `timeline_kind = actual_arrival` berasal dari pesan arrival yang memiliki `ata_time`. Planned return leg dari route seperti `MKQ-EWE-MKQ` tetap tersimpan di `FLIGHT_RAW`, tetapi tidak dimasukkan ke timeline utama selama belum ada event aktualnya.
 
