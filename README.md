@@ -12,7 +12,7 @@ Yang sudah ada di repo:
 - Ingest service Python untuk menerima dan menyimpan pesan.
 - SQLite sebagai penyimpanan lokal.
 - Parser berbasis aturan untuk pesan `MVT Dept` dan `Mvt Arrival`.
-- Sinkronisasi Google Sheets ke tab bronze/silver: `RAW` dan `FLIGHT_RAW`.
+- Sinkronisasi Google Sheets ke tab `RAW`, `FLIGHT_RAW`, `FLIGHT_TIMELINE`, dan `MASTER_IATA`.
 - Script migrasi data operasional lokal.
 - Command suite worker: `./connect.sh`, `./status.sh`, dan `./stop.sh`.
 - Systemd user service untuk menjaga worker tetap hidup dan auto-start setelah reboot.
@@ -120,6 +120,7 @@ Tab tambahan untuk konsumsi harian Ops:
 
 ```text
 FLIGHT_TIMELINE  view rotasi pesawat yang sudah diurutkan untuk melihat kronologi per registration
+MASTER_IATA      master airport internal plus score traffic aktual dari flight movement
 ```
 
 `RAW` hanya boleh ditambah. Isi tab ini tidak boleh diedit manual karena menjadi sumber kebenaran.
@@ -131,6 +132,8 @@ Untuk pesan arrival yang tidak membawa tanggal operasi di teks mentah, `operatio
 `FLIGHT_OPS` adalah dataset final untuk kebutuhan operasional. Baris hanya boleh masuk ke sini setelah melewati pembersihan AI dan gerbang validasi.
 
 `FLIGHT_TIMELINE` adalah view turunan dari `FLIGHT_RAW`. Tab ini tidak menjadi sumber kebenaran baru; ia hanya memudahkan user melihat urutan terbang aktual pesawat per hari dan per registration. Untuk membaca kronologi, filter `operation_date` dan `registration`, lalu sort ascending kolom `timeline_sort_key`. Kolom yang paling enak dibaca manusia adalah `event_datetime_local`, sedangkan `event_time` tetap menyimpan waktu Z dari pesan sumber.
+
+`MASTER_IATA` adalah master airport internal yang dinormalisasi dari source sheet master. Tab ini membawa `total_departure`, `total_arrival`, dan `total_flight` sebagai score popularity berdasarkan movement aktual yang sudah masuk SQLite.
 
 Field crew yang dipakai di silver dan gold:
 
@@ -317,6 +320,8 @@ Buku kerja Google Sheets target berisi:
 - `RAW`: pesan WhatsApp mentah.
 - `FLIGHT_RAW`: hasil parser plus status pembersihan mendalam.
 - `FLIGHT_OPS`: data gold hasil pembersihan AI.
+- `FLIGHT_TIMELINE`: view kronologi actual departure/arrival.
+- `MASTER_IATA`: master airport internal dan score traffic.
 
 Worker terjadwal harus menambahkan atau memperbarui tab-tab tersebut tanpa copy-paste manual.
 
@@ -381,7 +386,7 @@ config/google-sheets.env.example
 integrations/google-sheets-webhook.gs
 ```
 
-Data operasional lokal, credential WhatsApp, pesan, database, log, PID, dan master data internal tidak ikut git.
+Data operasional lokal, credential WhatsApp, pesan, database, log, dan PID tidak ikut git. Pengecualian khusus: `data/reference/master_iata.json` ikut git sebagai master referensi non-credential.
 
 ## Prasyarat
 
@@ -436,18 +441,24 @@ GOOGLE_SHEETS_RAW_TAB=RAW
 GOOGLE_SHEETS_FLIGHT_RAW_TAB=FLIGHT_RAW
 GOOGLE_SHEETS_FLIGHT_OPS_TAB=FLIGHT_OPS
 GOOGLE_SHEETS_FLIGHT_TIMELINE_TAB=FLIGHT_TIMELINE
+GOOGLE_SHEETS_MASTER_IATA_TAB=MASTER_IATA
 OPS_OPERATION_TIMEZONE=Asia/Jakarta
+MASTER_IATA_AUTO_SYNC=1
+MASTER_IATA_REFRESH_SECONDS=1800
+MASTER_IATA_SOURCE_SPREADSHEET_ID=1nLd3kkkSWJFCUjjR3kph7Wjsv0v_gN8VvXWptGmS5NE
+MASTER_IATA_SOURCE_GID=980038686
 ```
 
 File `config/google-sheets.env` tidak boleh di-commit.
 
-Buat atau pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, dan `FLIGHT_TIMELINE` tersedia di Google Sheets:
+Buat atau pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, dan `MASTER_IATA` tersedia di Google Sheets:
 
 ```bash
 npm run sheets:ensure
+npm run master:iata:sync
 ```
 
-Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, dan `FLIGHT_TIMELINE` sudah benar:
+Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, dan `MASTER_IATA` sudah benar:
 
 ```bash
 npm run sheets:delete-legacy
@@ -694,6 +705,20 @@ Command ini:
 4. Replace tab MASTER_IATA di spreadsheet ops
 ```
 
+Saat `npm run sheets:sync:loop` berjalan, `MASTER_IATA` ikut di-refresh otomatis secara periodik. Default interval:
+
+```text
+MASTER_IATA_REFRESH_SECONDS=1800
+```
+
+Artinya `MASTER_IATA` dihitung ulang setiap 30 menit. Refresh ini sengaja tidak dibuat trigger per message karena command akan menghitung ulang traffic dan replace seluruh tab master; update periodik lebih aman terhadap limit Google Sheets dan menghindari race dengan sync utama.
+
+Untuk menonaktifkan auto-refresh master:
+
+```bash
+MASTER_IATA_AUTO_SYNC=0
+```
+
 Kolom koordinat `latitude_deg` dan `longitude_deg` disiapkan tetapi masih kosong sampai ada proses enrichment koordinat.
 
 Tab `MASTER_IATA` juga membawa ringkasan traffic dari `FLIGHT_TIMELINE`/movement aktual:
@@ -708,10 +733,11 @@ Metric ini dipakai sebagai score popularity airport/lokasi dalam seluruh mission
 
 ## Sinkronisasi ke Google Sheets
 
-Pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, dan `FLIGHT_TIMELINE` sudah ada:
+Pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, dan `MASTER_IATA` sudah ada:
 
 ```bash
 npm run sheets:ensure
+npm run master:iata:sync
 ```
 
 Kirim pesan mentah dan movement rows yang belum tersinkron satu kali:
@@ -724,6 +750,13 @@ Jalankan sinkronisasi terus-menerus:
 
 ```bash
 npm run sheets:sync:loop
+```
+
+Loop ini menjalankan dua proses dalam satu service:
+
+```text
+1. sync utama RAW / FLIGHT_RAW / FLIGHT_TIMELINE secara kontinu
+2. refresh MASTER_IATA periodik sesuai MASTER_IATA_REFRESH_SECONDS
 ```
 
 Jika schema `FLIGHT_RAW` berubah dan tab perlu dibangun ulang dari SQLite lokal:
@@ -772,7 +805,7 @@ Status sinkronisasi disimpan di:
 data/google-sheets-movement-sync-state.json
 ```
 
-Hapus file status ini hanya jika memang ingin menambahkan ulang semua row `RAW` dan `FLIGHT_RAW`.
+Hapus file status ini hanya jika memang ingin menambahkan ulang semua row `RAW`, `FLIGHT_RAW`, dan `FLIGHT_TIMELINE`.
 
 ## Menjalankan Semua Worker
 
