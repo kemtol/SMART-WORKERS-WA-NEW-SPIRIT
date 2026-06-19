@@ -6,6 +6,7 @@ data/*
 !data/reference/
 data/reference/*
 !data/reference/master_iata.json
+!data/reference/mapping_pilot.json
 .runtime-auth/
 config/*.env
 

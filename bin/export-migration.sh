@@ -41,6 +41,7 @@ if [ -f "$ROOT_DIR/data/ops_messages.sqlite3" ]; then
 fi
 
 copy_if_exists "data/reference/master_iata.json" && copied=1 || true
+copy_if_exists "data/reference/mapping_pilot.json" && copied=1 || true
 copy_if_exists "data/google-sheets-movement-sync-state.json" && copied=1 || true
 
 if [ "${INCLUDE_LOCAL_ENV:-0}" = "1" ]; then
@@ -48,7 +49,7 @@ if [ "${INCLUDE_LOCAL_ENV:-0}" = "1" ]; then
 fi
 
 if [ "$copied" -eq 0 ]; then
-  echo "No migration files found. Expected data/ops_messages.sqlite3 and/or data/reference/master_iata.json." >&2
+  echo "No migration files found. Expected data/ops_messages.sqlite3 and/or data/reference/*.json." >&2
   exit 1
 fi
 

@@ -12,7 +12,7 @@ Yang sudah ada di repo:
 - Ingest service Python untuk menerima dan menyimpan pesan.
 - SQLite sebagai penyimpanan lokal.
 - Parser berbasis aturan untuk pesan `MVT Dept` dan `Mvt Arrival`.
-- Sinkronisasi Google Sheets ke tab `RAW`, `FLIGHT_RAW`, `FLIGHT_TIMELINE`, dan `MASTER_IATA`.
+- Sinkronisasi Google Sheets ke tab `RAW`, `FLIGHT_RAW`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT`.
 - Script migrasi data operasional lokal.
 - Command suite worker: `./connect.sh`, `./status.sh`, dan `./stop.sh`.
 - Systemd user service untuk menjaga worker tetap hidup dan auto-start setelah reboot.
@@ -121,6 +121,7 @@ Tab tambahan untuk konsumsi harian Ops:
 ```text
 FLIGHT_TIMELINE  view rotasi pesawat yang sudah diurutkan untuk melihat kronologi per registration
 MASTER_IATA      master airport internal plus score traffic aktual dari flight movement
+MAPPING_PILOT    master pilot dan kandidat alias/initial yang dipakai Ops di lapangan
 ```
 
 `RAW` hanya boleh ditambah. Isi tab ini tidak boleh diedit manual karena menjadi sumber kebenaran.
@@ -135,6 +136,8 @@ Untuk pesan arrival yang tidak membawa tanggal operasi di teks mentah, `operatio
 
 `MASTER_IATA` adalah master airport internal yang dinormalisasi dari source sheet master. Tab ini membawa `total_departure`, `total_arrival`, dan `total_flight` sebagai score popularity berdasarkan movement aktual yang sudah masuk SQLite.
 
+`MAPPING_PILOT` adalah master pilot yang dinormalisasi dari master crew internal. Tab ini dipakai untuk menjembatani nama lengkap pilot dengan cara penulisan di grup Ops seperti `Capt.PFK`, `Capt. Oscar K`, `Fo. NRB`, atau `FO. Juven`.
+
 Field crew yang dipakai di silver dan gold:
 
 ```text
@@ -144,6 +147,8 @@ crew_text
 ```
 
 `pic_name` diambil dari label `PIC`, `sic_name` dari label `SIC`, dan `crew_text` menyimpan ringkasan crew yang dekat dengan teks sumber. Field ini biasanya tersedia di pesan `MVT Dept`; pada pesan arrival field ini boleh kosong.
+
+Pada tahap parser awal, `pic_name` dan `sic_name` tetap disimpan apa adanya dari pesan Ops. Normalisasi ke nama pilot master dilakukan di tahap deepclean/gold dengan bantuan `MAPPING_PILOT`.
 
 ### Alur E2E Target
 
@@ -322,6 +327,7 @@ Buku kerja Google Sheets target berisi:
 - `FLIGHT_OPS`: data gold hasil pembersihan AI.
 - `FLIGHT_TIMELINE`: view kronologi actual departure/arrival.
 - `MASTER_IATA`: master airport internal dan score traffic.
+- `MAPPING_PILOT`: master pilot dan kandidat alias/initial crew.
 
 Worker terjadwal harus menambahkan atau memperbarui tab-tab tersebut tanpa copy-paste manual.
 
@@ -386,7 +392,7 @@ config/google-sheets.env.example
 integrations/google-sheets-webhook.gs
 ```
 
-Data operasional lokal, credential WhatsApp, pesan, database, log, dan PID tidak ikut git. Pengecualian khusus: `data/reference/master_iata.json` ikut git sebagai master referensi non-credential.
+Data operasional lokal, credential WhatsApp, pesan, database, log, dan PID tidak ikut git. Pengecualian khusus: `data/reference/master_iata.json` dan `data/reference/mapping_pilot.json` ikut git sebagai master referensi non-credential.
 
 ## Prasyarat
 
@@ -410,6 +416,8 @@ RAW
 FLIGHT_RAW
 FLIGHT_OPS
 FLIGHT_TIMELINE
+MASTER_IATA
+MAPPING_PILOT
 ```
 
 Langkah setup Apps Script:
@@ -442,23 +450,28 @@ GOOGLE_SHEETS_FLIGHT_RAW_TAB=FLIGHT_RAW
 GOOGLE_SHEETS_FLIGHT_OPS_TAB=FLIGHT_OPS
 GOOGLE_SHEETS_FLIGHT_TIMELINE_TAB=FLIGHT_TIMELINE
 GOOGLE_SHEETS_MASTER_IATA_TAB=MASTER_IATA
+GOOGLE_SHEETS_MAPPING_PILOT_TAB=MAPPING_PILOT
 OPS_OPERATION_TIMEZONE=Asia/Jakarta
 MASTER_IATA_AUTO_SYNC=1
 MASTER_IATA_REFRESH_SECONDS=1800
 MASTER_IATA_SOURCE_SPREADSHEET_ID=1nLd3kkkSWJFCUjjR3kph7Wjsv0v_gN8VvXWptGmS5NE
 MASTER_IATA_SOURCE_GID=980038686
+MAPPING_PILOT_AUTO_SYNC=1
+MAPPING_PILOT_REFRESH_SECONDS=3600
+MAPPING_PILOT_SOURCE_SPREADSHEET_ID=1fAUbyfFrMw5VPK2hb_Ocg3-xjLjr_x6p
 ```
 
 File `config/google-sheets.env` tidak boleh di-commit.
 
-Buat atau pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, dan `MASTER_IATA` tersedia di Google Sheets:
+Buat atau pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT` tersedia di Google Sheets:
 
 ```bash
 npm run sheets:ensure
 npm run master:iata:sync
+npm run mapping:pilot:sync
 ```
 
-Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, dan `MASTER_IATA` sudah benar:
+Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT` sudah benar:
 
 ```bash
 npm run sheets:delete-legacy
@@ -688,7 +701,7 @@ Prioritas mapping:
 2. `config/airport_mappings.json`
 3. fallback belum terpetakan atau teks bebas
 
-File `data/reference/master_iata.json` sengaja dikecualikan dari ignore rule agar ikut ke GitHub sebagai master referensi. File runtime lain di folder `data/` tetap di-ignore.
+File `data/reference/master_iata.json` dan `data/reference/mapping_pilot.json` sengaja dikecualikan dari ignore rule agar ikut ke GitHub sebagai master referensi. File runtime lain di folder `data/` tetap di-ignore.
 
 Untuk membuat atau refresh tab `MASTER_IATA` di Google Sheets ops dari source sheet master:
 
@@ -750,13 +763,68 @@ duplicate  row duplikat yang menunjuk ke canonical_airport_id
 
 Pemilihan canonical memakai prioritas: `total_flight` tertinggi, nama yang lebih informatif, lalu `id` paling kecil sebagai tie-breaker.
 
+## Master Pilot dan Mapping Initial
+
+Master pilot internal disimpan sebagai referensi lokal:
+
+```text
+data/reference/mapping_pilot.json
+```
+
+Untuk membuat atau refresh tab `MAPPING_PILOT` dari master pilot internal:
+
+```bash
+npm run mapping:pilot:sync
+```
+
+Command ini:
+
+```text
+1. Download XLSX dari source Google Sheet master pilot
+2. Normalisasi casing nama pilot dan metadata rating
+3. Membuat kolom initial_1 sampai initial_4
+4. Membuat match_keys untuk alias lapangan seperti PFK, Oscar K, Tegar B, NRB
+5. Menghitung raw crew value yang sudah pernah muncul di SQLite
+6. Simpan hasil lokal ke data/reference/mapping_pilot.json
+7. Replace tab MAPPING_PILOT di spreadsheet ops
+```
+
+Kolom inti:
+
+```text
+pilot_name
+rank
+position
+rating
+initial_1
+initial_2
+initial_3
+initial_4
+match_keys
+observed_raw_values
+observed_raw_count
+mapping_status
+mapping_confidence
+```
+
+`initial_1` adalah initial utama dari nama lengkap, contoh `PRABU FACHRI KENCANA` menjadi `PFK`. Kolom `match_keys` berisi kandidat alias tambahan yang dipakai parser/deepclean untuk mencocokkan penulisan lapangan. Jika alias di Ops sudah pernah muncul dan match ke satu pilot, row diberi `mapping_status=matched_from_ops`.
+
+Saat `npm run sheets:sync:loop` berjalan, `MAPPING_PILOT` ikut di-refresh otomatis secara periodik. Default interval:
+
+```text
+MAPPING_PILOT_REFRESH_SECONDS=3600
+```
+
+Artinya `MAPPING_PILOT` dihitung ulang setiap 1 jam. Refresh ini cukup periodik karena master pilot dan alias crew tidak perlu dihitung ulang setiap pesan masuk.
+
 ## Sinkronisasi ke Google Sheets
 
-Pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, dan `MASTER_IATA` sudah ada:
+Pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT` sudah ada:
 
 ```bash
 npm run sheets:ensure
 npm run master:iata:sync
+npm run mapping:pilot:sync
 ```
 
 Kirim pesan mentah dan movement rows yang belum tersinkron satu kali:
@@ -776,6 +844,7 @@ Loop ini menjalankan dua proses dalam satu service:
 ```text
 1. sync utama RAW / FLIGHT_RAW / FLIGHT_TIMELINE secara kontinu
 2. refresh MASTER_IATA periodik sesuai MASTER_IATA_REFRESH_SECONDS
+3. refresh MAPPING_PILOT periodik sesuai MAPPING_PILOT_REFRESH_SECONDS
 ```
 
 Jika schema `FLIGHT_RAW` berubah dan tab perlu dibangun ulang dari SQLite lokal:
@@ -860,6 +929,7 @@ Yang ikut jika tersedia:
 
 - `data/ops_messages.sqlite3`
 - `data/reference/master_iata.json`
+- `data/reference/mapping_pilot.json`
 - `data/google-sheets-movement-sync-state.json`
 
 Ekspor dengan enkripsi:

@@ -25,6 +25,7 @@
     "sheets:replace-flight-timeline": "python3 app/google_sheets_sync.py --replace-flight-timeline",
     "sheets:sync:loop": "bash bin/run-sheets-sync-loop.sh",
     "master:iata:sync": "python3 app/sync_master_iata_sheet.py",
+    "mapping:pilot:sync": "python3 app/sync_mapping_pilot_sheet.py",
     "legacy:import-movement-internal": "python3 app/import_legacy_movement_internal.py",
     "legacy:import-whatsapp-export": "python3 app/import_whatsapp_export.py",
     "parse-export": "node src/parse-export.js",
