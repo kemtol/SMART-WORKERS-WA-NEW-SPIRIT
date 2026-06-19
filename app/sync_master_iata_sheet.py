@@ -4,12 +4,14 @@ import csv
 import json
 import os
 import re
+import sqlite3
 import urllib.request
 from io import StringIO
 
 from google_sheets_sync import DEFAULT_SPREADSHEET_ID, DEFAULT_TOKEN, DEFAULT_WEBHOOK_URL, post_payload
 
 
+DEFAULT_DB = os.environ.get("OPS_DB_PATH", "data/ops_messages.sqlite3")
 DEFAULT_SOURCE_SPREADSHEET_ID = os.environ.get("MASTER_IATA_SOURCE_SPREADSHEET_ID", "1nLd3kkkSWJFCUjjR3kph7Wjsv0v_gN8VvXWptGmS5NE")
 DEFAULT_SOURCE_GID = os.environ.get("MASTER_IATA_SOURCE_GID", "980038686")
 DEFAULT_TARGET_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_MASTER_IATA_TAB", "MASTER_IATA")
@@ -28,6 +30,9 @@ HEADERS = [
     "longitude_deg",
     "coordinate_source",
     "coordinate_confidence",
+    "total_departure",
+    "total_arrival",
+    "total_flight",
     "is_hidden",
     "source",
     "source_row_number",
@@ -101,6 +106,9 @@ def normalize_rows(csv_text):
             "longitude_deg": "",
             "coordinate_source": "",
             "coordinate_confidence": "",
+            "total_departure": 0,
+            "total_arrival": 0,
+            "total_flight": 0,
             "is_hidden": clean_metadata(row.get("is_hidden") or "0"),
             "source": "master_iata_sheet",
             "source_row_number": index,
@@ -111,6 +119,61 @@ def normalize_rows(csv_text):
         }
         rows.append(normalized)
     return rows
+
+
+def connect(db_path):
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
+
+
+def movement_counts(db_path):
+    if not os.path.exists(db_path):
+        return {}, {}
+
+    departures = {}
+    arrivals = {}
+    with connect(db_path) as conn:
+        for row in conn.execute(
+            """
+            SELECT leg_origin_code AS code, COUNT(*) AS total
+            FROM flight_movements
+            WHERE movement_type = 'departure'
+              AND takeoff_time IS NOT NULL
+              AND takeoff_time != ''
+              AND leg_origin_code IS NOT NULL
+              AND leg_origin_code != ''
+            GROUP BY leg_origin_code
+            """
+        ):
+            departures[clean_code(row["code"])] = int(row["total"] or 0)
+
+        for row in conn.execute(
+            """
+            SELECT arrival_airport_code AS code, COUNT(*) AS total
+            FROM flight_movements
+            WHERE movement_type = 'arrival'
+              AND ata_time IS NOT NULL
+              AND ata_time != ''
+              AND arrival_airport_code IS NOT NULL
+              AND arrival_airport_code != ''
+            GROUP BY arrival_airport_code
+            """
+        ):
+            arrivals[clean_code(row["code"])] = int(row["total"] or 0)
+
+    return departures, arrivals
+
+
+def apply_movement_counts(rows, departures, arrivals):
+    for row in rows:
+        code = clean_code(row.get("code"))
+        total_departure = departures.get(code, 0)
+        total_arrival = arrivals.get(code, 0)
+        row["total_departure"] = total_departure
+        row["total_arrival"] = total_arrival
+        row["total_flight"] = total_departure + total_arrival
 
 
 def save_json(path, rows):
@@ -174,6 +237,7 @@ def main():
     parser = argparse.ArgumentParser(description="Create a normalized MASTER_IATA sheet from the source Google Sheet CSV")
     parser.add_argument("--source-spreadsheet-id", default=DEFAULT_SOURCE_SPREADSHEET_ID)
     parser.add_argument("--source-gid", default=DEFAULT_SOURCE_GID)
+    parser.add_argument("--db", default=DEFAULT_DB)
     parser.add_argument("--sheet-name", default=DEFAULT_TARGET_SHEET_NAME)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--webhook-url", default=DEFAULT_WEBHOOK_URL)
@@ -187,6 +251,8 @@ def main():
 
     csv_text = download_csv(source_csv_url(args.source_spreadsheet_id, args.source_gid), args.timeout_seconds)
     rows = normalize_rows(csv_text)
+    departures, arrivals = movement_counts(args.db)
+    apply_movement_counts(rows, departures, arrivals)
     save_json(args.output, rows)
 
     appended = 0 if args.dry_run else post_rows(args, rows)
@@ -200,6 +266,8 @@ def main():
                 "output": args.output,
                 "rows": len(rows),
                 "appended": appended,
+                "total_departure_events": sum(departures.values()),
+                "total_arrival_events": sum(arrivals.values()),
                 "dry_run": args.dry_run,
             },
             ensure_ascii=False,

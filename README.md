@@ -696,6 +696,16 @@ Command ini:
 
 Kolom koordinat `latitude_deg` dan `longitude_deg` disiapkan tetapi masih kosong sampai ada proses enrichment koordinat.
 
+Tab `MASTER_IATA` juga membawa ringkasan traffic dari `FLIGHT_TIMELINE`/movement aktual:
+
+```text
+total_departure = jumlah actual_departure dengan origin code tersebut
+total_arrival   = jumlah actual_arrival dengan destination code tersebut
+total_flight    = total_departure + total_arrival
+```
+
+Metric ini dipakai sebagai score popularity airport/lokasi dalam seluruh mission yang sudah tersimpan di SQLite lokal.
+
 ## Sinkronisasi ke Google Sheets
 
 Pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, dan `FLIGHT_TIMELINE` sudah ada:
