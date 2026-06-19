@@ -731,6 +731,25 @@ total_flight    = total_departure + total_arrival
 
 Metric ini dipakai sebagai score popularity airport/lokasi dalam seluruh mission yang sudah tersimpan di SQLite lokal.
 
+Dedup yang diterapkan otomatis masih konservatif. Worker hanya menandai duplicate exact `code + icao_code`; tidak ada row yang dihapus. Kolom kontrol:
+
+```text
+canonical_airport_id
+dedup_status
+dedup_reason
+dedup_group_key
+```
+
+Nilai `dedup_status`:
+
+```text
+unique     tidak masuk group duplicate exact
+canonical  row utama untuk group duplicate exact
+duplicate  row duplikat yang menunjuk ke canonical_airport_id
+```
+
+Pemilihan canonical memakai prioritas: `total_flight` tertinggi, nama yang lebih informatif, lalu `id` paling kecil sebagai tie-breaker.
+
 ## Sinkronisasi ke Google Sheets
 
 Pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, dan `MASTER_IATA` sudah ada:

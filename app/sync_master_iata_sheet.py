@@ -33,6 +33,10 @@ HEADERS = [
     "total_departure",
     "total_arrival",
     "total_flight",
+    "canonical_airport_id",
+    "dedup_status",
+    "dedup_reason",
+    "dedup_group_key",
     "is_hidden",
     "source",
     "source_row_number",
@@ -109,6 +113,10 @@ def normalize_rows(csv_text):
             "total_departure": 0,
             "total_arrival": 0,
             "total_flight": 0,
+            "canonical_airport_id": "",
+            "dedup_status": "unique",
+            "dedup_reason": "",
+            "dedup_group_key": "",
             "is_hidden": clean_metadata(row.get("is_hidden") or "0"),
             "source": "master_iata_sheet",
             "source_row_number": index,
@@ -174,6 +182,58 @@ def apply_movement_counts(rows, departures, arrivals):
         row["total_departure"] = total_departure
         row["total_arrival"] = total_arrival
         row["total_flight"] = total_departure + total_arrival
+
+
+def numeric_value(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def canonical_score(row):
+    name = clean_metadata(row.get("airport_name"))
+    has_airport_word = 1 if re.search(r"\b(Airport|Bandara|Bandar Udara|International)\b", name, re.IGNORECASE) else 0
+    return (
+        numeric_value(row.get("total_flight")),
+        has_airport_word,
+        len(name),
+        -numeric_value(row.get("id")),
+    )
+
+
+def apply_exact_code_icao_dedup(rows):
+    groups = {}
+    for row in rows:
+        code = clean_code(row.get("code"))
+        icao_code = clean_code(row.get("icao_code"))
+        if not code or not icao_code:
+            continue
+        groups.setdefault((code, icao_code), []).append(row)
+
+    duplicate_groups = 0
+    duplicate_rows = 0
+    for (code, icao_code), group in groups.items():
+        if len(group) < 2:
+            continue
+        duplicate_groups += 1
+        group_key = f"{code}|{icao_code}"
+        canonical = max(group, key=canonical_score)
+        canonical_id = canonical.get("id")
+        canonical["canonical_airport_id"] = canonical_id
+        canonical["dedup_status"] = "canonical"
+        canonical["dedup_reason"] = "exact_code_icao_duplicate"
+        canonical["dedup_group_key"] = group_key
+        for row in group:
+            if row is canonical:
+                continue
+            duplicate_rows += 1
+            row["canonical_airport_id"] = canonical_id
+            row["dedup_status"] = "duplicate"
+            row["dedup_reason"] = "exact_code_icao_duplicate"
+            row["dedup_group_key"] = group_key
+
+    return {"dedup_exact_code_icao_groups": duplicate_groups, "dedup_exact_code_icao_duplicate_rows": duplicate_rows}
 
 
 def save_json(path, rows):
@@ -253,6 +313,7 @@ def main():
     rows = normalize_rows(csv_text)
     departures, arrivals = movement_counts(args.db)
     apply_movement_counts(rows, departures, arrivals)
+    dedup_stats = apply_exact_code_icao_dedup(rows)
     save_json(args.output, rows)
 
     appended = 0 if args.dry_run else post_rows(args, rows)
@@ -268,6 +329,7 @@ def main():
                 "appended": appended,
                 "total_departure_events": sum(departures.values()),
                 "total_arrival_events": sum(arrivals.values()),
+                **dedup_stats,
                 "dry_run": args.dry_run,
             },
             ensure_ascii=False,
