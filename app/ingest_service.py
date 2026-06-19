@@ -8,6 +8,7 @@ import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo
 
 from movement_parser import load_mapping, parse_movements
 
@@ -15,10 +16,24 @@ from movement_parser import load_mapping, parse_movements
 DEFAULT_HOST = os.environ.get("OPS_INGEST_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("OPS_INGEST_PORT", "8088"))
 DEFAULT_DB = os.environ.get("OPS_DB_PATH", "data/ops_messages.sqlite3")
+DEFAULT_OPERATION_TIMEZONE = os.environ.get("OPS_OPERATION_TIMEZONE", "Asia/Jakarta")
 
 
 def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def operation_date_from_timestamp(timestamp_iso, timezone_name=DEFAULT_OPERATION_TIMEZONE):
+    if not timestamp_iso:
+        return None
+    try:
+        value = timestamp_iso.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(ZoneInfo(timezone_name)).date().isoformat()
+    except (ValueError, TypeError, OSError):
+        return timestamp_iso[:10] if len(timestamp_iso) >= 10 else None
 
 
 def json_response(handler, status, payload):
@@ -245,6 +260,11 @@ class Store:
 
     def insert_movements(self, conn, raw_message_id, text, now):
         movements = parse_movements(text, self.airport_mapping)
+        raw_message = conn.execute(
+            "SELECT message_timestamp_iso FROM raw_messages WHERE id = ?",
+            (raw_message_id,),
+        ).fetchone()
+        fallback_operation_date = operation_date_from_timestamp(raw_message["message_timestamp_iso"] if raw_message else None)
         for index, movement in enumerate(movements, start=1):
             conn.execute(
                 """
@@ -270,7 +290,7 @@ class Store:
                     raw_message_id,
                     index,
                     movement.get("movement_type"),
-                    movement.get("operation_date"),
+                    movement.get("operation_date") or fallback_operation_date,
                     movement.get("registration"),
                     movement.get("aircraft_type"),
                     movement.get("flight_seq"),

@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 
 def load_local_env(path="config/google-sheets.env"):
@@ -33,6 +34,7 @@ DEFAULT_FLIGHT_TIMELINE_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_FLIGHT_TIMELI
 DEFAULT_WEBHOOK_URL = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL")
 DEFAULT_TOKEN = os.environ.get("GOOGLE_SHEETS_WEBHOOK_TOKEN")
 DEFAULT_SPREADSHEET_ID = os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID")
+DEFAULT_OPERATION_TIMEZONE = os.environ.get("OPS_OPERATION_TIMEZONE", "Asia/Jakarta")
 
 RAW_HEADERS = [
     "raw_message_id",
@@ -60,6 +62,7 @@ FLIGHT_RAW_HEADERS = [
     "sender_jid",
     "movement_type",
     "operation_date",
+    "chronology_sort_key",
     "registration",
     "aircraft_type",
     "flight_seq",
@@ -195,6 +198,19 @@ def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def operation_date_from_timestamp(timestamp_iso, timezone_name=DEFAULT_OPERATION_TIMEZONE):
+    if not timestamp_iso:
+        return None
+    try:
+        value = timestamp_iso.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(ZoneInfo(timezone_name)).date().isoformat()
+    except (ValueError, TypeError, OSError):
+        return timestamp_iso[:10] if len(timestamp_iso) >= 10 else None
+
+
 def first_value(*values):
     for value in values:
         if value not in (None, ""):
@@ -213,6 +229,23 @@ def numeric_text(value, width):
         return f"{int(value):0{width}d}"
     except (TypeError, ValueError):
         return "9" * width
+
+
+def operation_date_for_row(row):
+    return first_value(row["operation_date"], operation_date_from_timestamp(row["message_timestamp_iso"]))
+
+
+def chronology_sort_key(row, operation_date=None):
+    return "|".join(
+        [
+            operation_date or "9999-99-99",
+            row["registration"] or "",
+            numeric_text(row["flight_seq"], 3),
+            row["message_timestamp_iso"] or "9999-99-99T99:99:99Z",
+            numeric_text(row["movement_id"], 8),
+            numeric_text(row["leg_index"], 3),
+        ]
+    )
 
 
 def load_state(path):
@@ -344,6 +377,9 @@ def get_flight_raw_rows(db_path, after_id, limit):
     result = []
     for row in rows:
         item = {key: row[key] for key in FLIGHT_RAW_HEADERS if key in row.keys()}
+        operation_date = operation_date_for_row(row)
+        item["operation_date"] = operation_date
+        item["chronology_sort_key"] = chronology_sort_key(row, operation_date)
         item.update(
             {
                 "deepclean_status": "pending",
@@ -362,7 +398,7 @@ def get_flight_raw_rows(db_path, after_id, limit):
 
 def timeline_row_from_movement(row):
     movement_type = row["movement_type"]
-    operation_date = first_value(row["operation_date"], row["message_timestamp_iso"][:10] if row["message_timestamp_iso"] else None)
+    operation_date = operation_date_for_row(row)
 
     if movement_type == "arrival":
         timeline_kind = "actual_arrival"

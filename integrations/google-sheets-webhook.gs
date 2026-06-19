@@ -27,6 +27,7 @@ const FLIGHT_RAW_HEADERS = [
   'sender_jid',
   'movement_type',
   'operation_date',
+  'chronology_sort_key',
   'registration',
   'aircraft_type',
   'flight_seq',

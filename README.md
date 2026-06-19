@@ -126,6 +126,8 @@ FLIGHT_TIMELINE  view rotasi pesawat yang sudah diurutkan untuk melihat kronolog
 
 `FLIGHT_RAW` adalah hasil parsing awal. Data di sini bisa belum sempurna, tetapi setiap baris harus tetap bisa ditelusuri ke `raw_message_id`, `movement_id`, dan versi parser.
 
+Untuk pesan arrival yang tidak membawa tanggal operasi di teks mentah, `operation_date` diisi dari tanggal pesan WhatsApp dalam zona waktu `Asia/Jakarta`. Kolom `chronology_sort_key` tersedia agar tim bisa filter `registration`, lalu sort ascending untuk melihat urutan movement per pesawat dengan lebih stabil.
+
 `FLIGHT_OPS` adalah dataset final untuk kebutuhan operasional. Baris hanya boleh masuk ke sini setelah melewati pembersihan AI dan gerbang validasi.
 
 `FLIGHT_TIMELINE` adalah view turunan dari `FLIGHT_RAW`. Tab ini tidak menjadi sumber kebenaran baru; ia hanya memudahkan user melihat urutan terbang pesawat per hari dan per registration. Untuk membaca kronologi, sort ascending kolom `timeline_sort_key`, lalu filter `operation_date` dan `registration`.
@@ -402,6 +404,7 @@ Tujuan sinkronisasi yang sudah diimplementasikan saat ini:
 RAW
 FLIGHT_RAW
 FLIGHT_OPS
+FLIGHT_TIMELINE
 ```
 
 Langkah setup Apps Script:
@@ -433,17 +436,18 @@ GOOGLE_SHEETS_RAW_TAB=RAW
 GOOGLE_SHEETS_FLIGHT_RAW_TAB=FLIGHT_RAW
 GOOGLE_SHEETS_FLIGHT_OPS_TAB=FLIGHT_OPS
 GOOGLE_SHEETS_FLIGHT_TIMELINE_TAB=FLIGHT_TIMELINE
+OPS_OPERATION_TIMEZONE=Asia/Jakarta
 ```
 
 File `config/google-sheets.env` tidak boleh di-commit.
 
-Buat atau pastikan tab `RAW`, `FLIGHT_RAW`, dan `FLIGHT_OPS` tersedia di Google Sheets:
+Buat atau pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, dan `FLIGHT_TIMELINE` tersedia di Google Sheets:
 
 ```bash
 npm run sheets:ensure
 ```
 
-Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, dan `FLIGHT_OPS` sudah benar:
+Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, dan `FLIGHT_TIMELINE` sudah benar:
 
 ```bash
 npm run sheets:delete-legacy
@@ -718,6 +722,8 @@ npm run sheets:replace-flight-timeline
 `timeline_kind = planned_leg` berasal dari pesan departure dan menunjukkan rencana leg, termasuk return leg. `timeline_kind = actual_arrival` berasal dari pesan arrival dan menunjukkan actual arrival/ATA.
 
 Setelah tab dibuat, sync loop reguler ikut menambahkan row baru ke `FLIGHT_TIMELINE`. Jika urutan visual di Sheet terlihat berubah karena row baru di-append di bawah, sort ulang kolom `timeline_sort_key` ascending.
+
+Jika tetap membaca dari `FLIGHT_RAW`, gunakan `chronology_sort_key` sebagai urutan utama setelah memfilter `registration`. Kolom ini memakai fallback `operation_date` dari tanggal pesan WA jika teks arrival tidak mencantumkan tanggal eksplisit.
 
 Status sinkronisasi disimpan di:
 
