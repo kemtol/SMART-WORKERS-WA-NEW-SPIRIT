@@ -1,0 +1,591 @@
+{
+  "source": {
+    "name": "CALL SIGN SCREW SCA.pdf",
+    "file_id": "1iGTyVq0qRYfOk8JhqOzg_Qi95iUilA2x",
+    "folder_id": "19-CzgdBXh05K6exOuyRk4ADsWmrJSUAa",
+    "source_date": "2026-05-06"
+  },
+  "mappings": [
+    {
+      "pilot_id": "44",
+      "call_sign": "ADS",
+      "cpl_number": "16-0433",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "30",
+      "call_sign": "FDF",
+      "cpl_number": "18-0236",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "70",
+      "call_sign": "MAB",
+      "cpl_number": "25-0016",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "6",
+      "call_sign": "AYP",
+      "cpl_number": "10761",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "52",
+      "call_sign": "FLO",
+      "cpl_number": "11027",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "2",
+      "call_sign": "KRI",
+      "cpl_number": "9263",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "18",
+      "call_sign": "ANR",
+      "cpl_number": "22-0141",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "19",
+      "call_sign": "FRN",
+      "cpl_number": "18-0056",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "38",
+      "call_sign": "MHR",
+      "cpl_number": "18-0559",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "81",
+      "call_sign": "AMC",
+      "cpl_number": "17-0277",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "53",
+      "call_sign": "FQT",
+      "cpl_number": "23-0134",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "14",
+      "call_sign": "MRF",
+      "cpl_number": "20-0207",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "45",
+      "call_sign": "ADF",
+      "cpl_number": "19-0313",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "20",
+      "call_sign": "FAH",
+      "cpl_number": "17-0247",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "22",
+      "call_sign": "MRA",
+      "cpl_number": "18-0487",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "23",
+      "call_sign": "ANS",
+      "cpl_number": "18-0615",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "78",
+      "call_sign": "GGD",
+      "cpl_number": "21-0036",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "69",
+      "call_sign": "MRP",
+      "cpl_number": "23-0133",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "74",
+      "call_sign": "ABS",
+      "cpl_number": "24-0065",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "31",
+      "call_sign": "HFI",
+      "cpl_number": "20-0195",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "88",
+      "call_sign": "NRB",
+      "cpl_number": "24-0101",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "7",
+      "call_sign": "AST",
+      "cpl_number": "17-0167",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "54",
+      "call_sign": "HJM",
+      "cpl_number": "11573",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "39",
+      "call_sign": "NHA",
+      "cpl_number": "17-0233",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "46",
+      "call_sign": "AZS",
+      "cpl_number": "20-0063",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "87",
+      "call_sign": "HDW",
+      "cpl_number": "18-0354",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "40",
+      "call_sign": "NAS",
+      "cpl_number": "20-0116",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "71",
+      "call_sign": "AJK",
+      "cpl_number": "23-0148",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "55",
+      "call_sign": "IOA",
+      "cpl_number": "17-0717",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "41",
+      "call_sign": "OKG",
+      "cpl_number": "17-0071",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "27",
+      "call_sign": "AGT",
+      "cpl_number": "20-0178",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "21",
+      "call_sign": "IAD",
+      "cpl_number": "10688",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "42",
+      "call_sign": "OSB",
+      "cpl_number": "20-0054",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "8",
+      "call_sign": "ARZ",
+      "cpl_number": "19-0171",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "25",
+      "call_sign": "ITN",
+      "cpl_number": "17-0027",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "4",
+      "call_sign": "PCO",
+      "cpl_number": "7096",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "65",
+      "call_sign": "AIH",
+      "cpl_number": "11316",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "32",
+      "call_sign": "INW",
+      "cpl_number": "18-0127",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "86",
+      "call_sign": "PJE",
+      "cpl_number": "24-0016",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "9",
+      "call_sign": "AHM",
+      "cpl_number": "CPLH 9685",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "11",
+      "call_sign": "RNV",
+      "cpl_number": "7300",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "3",
+      "call_sign": "PFK",
+      "cpl_number": "9166",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "75",
+      "call_sign": "AJJ",
+      "cpl_number": "22-0223",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "58",
+      "call_sign": "PWP",
+      "cpl_number": "10298",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "47",
+      "call_sign": "ASL",
+      "cpl_number": "22-0228",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "79",
+      "call_sign": "JRT",
+      "cpl_number": "11590",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "85",
+      "call_sign": "RHF",
+      "cpl_number": "19-0488",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "48",
+      "call_sign": "AAD",
+      "cpl_number": "11493",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "56",
+      "call_sign": "JYB",
+      "cpl_number": "17-0022",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "43",
+      "call_sign": "RJP",
+      "cpl_number": "10178",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "49",
+      "call_sign": "ARK",
+      "cpl_number": "19-0282",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "62",
+      "call_sign": "JGS",
+      "cpl_number": "21-0116",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "80",
+      "call_sign": "RAB",
+      "cpl_number": "10606",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "82",
+      "call_sign": "AWN",
+      "cpl_number": "20-0268",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "93",
+      "call_sign": "RRI",
+      "cpl_number": "25-0013",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "26",
+      "call_sign": "BAL",
+      "cpl_number": "20-0175",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "33",
+      "call_sign": "DAI",
+      "cpl_number": "19-0150",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "15",
+      "call_sign": "RFA",
+      "cpl_number": "10780",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "28",
+      "call_sign": "BPS",
+      "cpl_number": "18-0555",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "84",
+      "call_sign": "JKJ",
+      "cpl_number": "24-0013",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "61",
+      "call_sign": "RVR",
+      "cpl_number": "24-0007",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "76",
+      "call_sign": "BCS",
+      "cpl_number": "19-0104",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "83",
+      "call_sign": "JNY",
+      "cpl_number": "24-0038",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "89",
+      "call_sign": "SMP",
+      "cpl_number": "25-0089",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "10",
+      "call_sign": "CGW",
+      "cpl_number": "9946",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "72",
+      "call_sign": "JVW",
+      "cpl_number": "18-0543",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "91",
+      "call_sign": "TMF",
+      "cpl_number": "19-0002",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "90",
+      "call_sign": "CSN",
+      "cpl_number": "22-0027",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "63",
+      "call_sign": "KVL",
+      "cpl_number": "25-0090",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "16",
+      "call_sign": "TKS",
+      "cpl_number": "20-0059",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "66",
+      "call_sign": "DRL",
+      "cpl_number": "25-0030",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "12",
+      "call_sign": "KTO",
+      "cpl_number": "21-0196",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "68",
+      "call_sign": "TBH",
+      "cpl_number": "19-0174",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "5",
+      "call_sign": "DDA",
+      "cpl_number": "6082",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "57",
+      "call_sign": "LAH",
+      "cpl_number": "21-0230",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "64",
+      "call_sign": "TPA",
+      "cpl_number": "21-0066",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "92",
+      "call_sign": "DVD",
+      "cpl_number": "19-0365",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "37",
+      "call_sign": "MAH",
+      "cpl_number": "21-0233",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "73",
+      "call_sign": "THM",
+      "cpl_number": "19-0225",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "34",
+      "call_sign": "APP",
+      "cpl_number": "18-0450",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "59",
+      "call_sign": "VJL",
+      "cpl_number": "20-0257",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "50",
+      "call_sign": "DKW",
+      "cpl_number": "23-0024",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "94",
+      "call_sign": "FRS",
+      "cpl_number": "25-0092",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "17",
+      "call_sign": "WAS",
+      "cpl_number": "17-0181",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "77",
+      "call_sign": "DHC",
+      "cpl_number": "11535",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "13",
+      "call_sign": "MNM",
+      "cpl_number": "10252",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "95",
+      "call_sign": "WRJ",
+      "cpl_number": "19-0261",
+      "match_method": "manual_name_review"
+    },
+    {
+      "pilot_id": "29",
+      "call_sign": "EVT",
+      "cpl_number": "19-0094",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "96",
+      "call_sign": "MKW",
+      "cpl_number": "21-0175",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "60",
+      "call_sign": "WRM",
+      "cpl_number": "20-0305",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "51",
+      "call_sign": "EMP",
+      "cpl_number": "24-0067",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "35",
+      "call_sign": "MDK",
+      "cpl_number": "19-0320",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "67",
+      "call_sign": "YST",
+      "cpl_number": "11218",
+      "match_method": "exact_name"
+    },
+    {
+      "pilot_id": "1",
+      "call_sign": "ENL",
+      "cpl_number": "H-6236",
+      "match_method": "exact_name"
+    }
+  ],
+  "unmatched": [
+    {
+      "pilot_name_pdf": "JANUAR DWI HADYAN",
+      "call_sign": "JDH",
+      "cpl_number": "19-0157"
+    },
+    {
+      "pilot_name_pdf": "JOAO MIGUEL RODRIGUES ANASTACIO",
+      "call_sign": "JMR",
+      "cpl_number": "8397"
+    },
+    {
+      "pilot_name_pdf": "DAVID PARTAHI PANJAITAN",
+      "call_sign": "DPP",
+      "cpl_number": "16-0358"
+    }
+  ]
+}

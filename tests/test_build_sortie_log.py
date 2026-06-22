@@ -84,6 +84,12 @@ class SortieLogTest(unittest.TestCase):
         self.assertEqual(matches, {})
         self.assertEqual(used, set())
 
+    def test_call_sign_can_match_across_operational_rank(self):
+        pilot = {"pilot_id": "68", "pilot_name": "Capt. Tegar Bintang Haryo Lukito"}
+        full_name, issue = sortie.match_pilot("Fo. TBH", "FO", {("", "TBH"): [pilot]})
+        self.assertEqual(full_name, pilot["pilot_name"])
+        self.assertIsNone(issue)
+
 
 if __name__ == "__main__":
     unittest.main()

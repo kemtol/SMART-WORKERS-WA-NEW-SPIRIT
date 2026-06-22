@@ -20,6 +20,10 @@ DEFAULT_SOURCE_SPREADSHEET_ID = os.environ.get(
 )
 DEFAULT_TARGET_SHEET_NAME = os.environ.get("GOOGLE_SHEETS_MAPPING_PILOT_TAB", "MAPPING_PILOT")
 DEFAULT_OUTPUT = os.environ.get("OPS_PILOT_MAPPING_PATH", "data/reference/mapping_pilot.json")
+DEFAULT_CALLSIGN_MAPPING = os.environ.get(
+    "OPS_PILOT_CALLSIGN_PATH",
+    "data/reference/pilot_callsigns.json",
+)
 
 XLSX_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 REL_NS = "{http://schemas.openxmlformats.org/package/2006/relationships}"
@@ -37,6 +41,10 @@ HEADERS = [
     "fi",
     "gi",
     "notes",
+    "call_sign",
+    "cpl_number",
+    "callsign_match_method",
+    "callsign_source",
     "initial_1",
     "initial_2",
     "initial_3",
@@ -283,6 +291,7 @@ def pilot_aliases(tokens):
 
     if len(tokens) >= 2:
         values.append(f"{tokens[0]} {tokens[-1][0]}")
+        values.append(f"{tokens[0]} {tokens[1][0]}")
         values.append(f"{tokens[0]} {tokens[1]}")
         values.append(f"{tokens[0][0]} {tokens[1]}")
         values.append(f"{tokens[0][0]}{tokens[1]}")
@@ -342,6 +351,10 @@ def normalize_rows(xlsx_rows):
                 "fi": row_value(raw_row, positions, "fi"),
                 "gi": row_value(raw_row, positions, "gi"),
                 "notes": row_value(raw_row, positions, "notes"),
+                "call_sign": "",
+                "cpl_number": "",
+                "callsign_match_method": "",
+                "callsign_source": "",
                 "initial_1": initials_list[0],
                 "initial_2": initials_list[1],
                 "initial_3": initials_list[2],
@@ -358,6 +371,48 @@ def normalize_rows(xlsx_rows):
             }
         )
     return rows
+
+
+def apply_callsign_mappings(rows, path=DEFAULT_CALLSIGN_MAPPING):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except FileNotFoundError:
+        return {"mapped": 0, "unmatched": [], "source": ""}
+
+    mappings = payload.get("mappings", []) if isinstance(payload, dict) else payload
+    unmatched = payload.get("unmatched", []) if isinstance(payload, dict) else []
+    source = payload.get("source", {}) if isinstance(payload, dict) else {}
+    by_pilot_id = {}
+    duplicate_ids = set()
+    for mapping in mappings:
+        pilot_id = compact_space(mapping.get("pilot_id"))
+        if not pilot_id:
+            continue
+        if pilot_id in by_pilot_id:
+            duplicate_ids.add(pilot_id)
+        by_pilot_id[pilot_id] = mapping
+    if duplicate_ids:
+        raise ValueError(f"Duplicate pilot_id in call sign mapping: {sorted(duplicate_ids)}")
+
+    source_name = compact_space(source.get("name") or "CALL SIGN SCREW SCA.pdf")
+    mapped = 0
+    for row in rows:
+        mapping = by_pilot_id.get(compact_space(row.get("pilot_id")))
+        if not mapping:
+            continue
+        call_sign = clean_metadata(mapping.get("call_sign")).upper()
+        if not call_sign:
+            continue
+        mapped += 1
+        row["call_sign"] = call_sign
+        row["cpl_number"] = clean_metadata(mapping.get("cpl_number"))
+        row["callsign_match_method"] = clean_metadata(mapping.get("match_method"))
+        row["callsign_source"] = source_name
+        row["_match_keys"] = dedupe([call_sign, *row["_match_keys"]])
+        row["match_keys"] = ", ".join(row["_match_keys"])
+
+    return {"mapped": mapped, "unmatched": unmatched, "source": source_name}
 
 
 def connect(db_path):
@@ -429,6 +484,8 @@ def apply_observed_aliases(rows, observed):
     for item in observed:
         if item["rank"]:
             candidates = key_map.get((item["rank"], item["key"])) or []
+            if not candidates:
+                candidates = key_map.get(("", item["key"])) or []
         else:
             candidates = key_map.get(("", item["key"])) or []
         candidates = sorted(set(candidates))
@@ -524,6 +581,7 @@ def main():
     parser.add_argument("--db", default=DEFAULT_DB)
     parser.add_argument("--sheet-name", default=DEFAULT_TARGET_SHEET_NAME)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--callsign-mapping", default=DEFAULT_CALLSIGN_MAPPING)
     parser.add_argument("--webhook-url", default=DEFAULT_WEBHOOK_URL)
     parser.add_argument("--token", default=DEFAULT_TOKEN)
     parser.add_argument("--spreadsheet-id", default=DEFAULT_SPREADSHEET_ID)
@@ -535,6 +593,7 @@ def main():
 
     content = download_binary(source_xlsx_url(args.source_spreadsheet_id), args.timeout_seconds)
     rows = normalize_rows(read_xlsx_rows(content, args.source_sheet_name))
+    callsign_stats = apply_callsign_mappings(rows, args.callsign_mapping)
     apply_conflict_metadata(rows)
     observed_stats = apply_observed_aliases(rows, observed_crew_values(args.db))
     save_json(args.output, rows)
@@ -549,6 +608,10 @@ def main():
                 "output": args.output,
                 "rows": len(rows),
                 "appended": appended,
+                "mapped_callsigns": callsign_stats["mapped"],
+                "unmatched_callsigns": len(callsign_stats["unmatched"]),
+                "unmatched_callsign_rows": callsign_stats["unmatched"],
+                "callsign_source": callsign_stats["source"],
                 "matched_observed_aliases": sum(len(items) for items in observed_stats["matched"].values()),
                 "unmatched_observed_aliases": len(observed_stats["unmatched"]),
                 "ambiguous_observed_aliases": len(observed_stats["ambiguous"]),

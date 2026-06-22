@@ -280,6 +280,7 @@ def load_pilot_index(path):
             _, normalized = normalize_crew(key)
             if normalized:
                 index[(rank, normalized)].append(row)
+                index[("", normalized)].append(row)
     return index
 
 
@@ -288,6 +289,8 @@ def match_pilot(value, expected_rank, pilot_index):
     if not key:
         return None, "crew_missing"
     candidates = pilot_index.get((observed_rank or expected_rank, key), [])
+    if not candidates:
+        candidates = pilot_index.get(("", key), [])
     unique = {str(row.get("pilot_id")): row for row in candidates}
     if len(unique) == 1:
         return next(iter(unique.values())).get("pilot_name"), None

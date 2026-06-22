@@ -688,6 +688,7 @@ MASTER_IATA_SOURCE_GID=980038686
 MAPPING_PILOT_AUTO_SYNC=1
 MAPPING_PILOT_REFRESH_SECONDS=3600
 MAPPING_PILOT_SOURCE_SPREADSHEET_ID=1fAUbyfFrMw5VPK2hb_Ocg3-xjLjr_x6p
+OPS_PILOT_CALLSIGN_PATH=data/reference/pilot_callsigns.json
 SORTIE_LOG_AUTO_SYNC=1
 SORTIE_LOG_REFRESH_SECONDS=3600
 SORTIE_LOG_FROM_DATE=2026-06-12
@@ -1002,6 +1003,7 @@ Master pilot internal disimpan sebagai referensi lokal:
 
 ```text
 data/reference/mapping_pilot.json
+data/reference/pilot_callsigns.json
 ```
 
 Untuk membuat atau refresh tab `MAPPING_PILOT` dari master pilot internal:
@@ -1013,13 +1015,14 @@ npm run mapping:pilot:sync
 Command ini:
 
 ```text
-1. Download XLSX dari source Google Sheet master pilot
+1. Download XLSX `master_pilot.xlsx` dari folder master Drive
 2. Normalisasi casing nama pilot dan metadata rating
-3. Membuat kolom initial_1 sampai initial_4
-4. Membuat match_keys untuk alias lapangan seperti PFK, Oscar K, Tegar B, NRB
-5. Menghitung raw crew value yang sudah pernah muncul di SQLite
-6. Simpan hasil lokal ke data/reference/mapping_pilot.json
-7. Replace tab MAPPING_PILOT di spreadsheet ops
+3. Merge call sign dan nomor CPL dari `CALL SIGN SCREW SCA.pdf`
+4. Membuat kolom initial_1 sampai initial_4
+5. Memasukkan call sign resmi ke match_keys untuk alias lapangan seperti EVT, MDK, YST, JNY, dan SMP
+6. Menghitung raw crew value yang sudah pernah muncul di SQLite
+7. Simpan hasil lokal ke data/reference/mapping_pilot.json
+8. Replace tab MAPPING_PILOT di spreadsheet ops
 ```
 
 Kolom inti:
@@ -1029,6 +1032,10 @@ pilot_name
 rank
 position
 rating
+call_sign
+cpl_number
+callsign_match_method
+callsign_source
 initial_1
 initial_2
 initial_3
@@ -1040,7 +1047,9 @@ mapping_status
 mapping_confidence
 ```
 
-`initial_1` adalah initial utama dari nama lengkap, contoh `PRABU FACHRI KENCANA` menjadi `PFK`. Kolom `match_keys` berisi kandidat alias tambahan yang dipakai parser/deepclean untuk mencocokkan penulisan lapangan. Jika alias di Ops sudah pernah muncul dan match ke satu pilot, row diberi `mapping_status=matched_from_ops`.
+`call_sign` berasal dari dokumen resmi `CALL SIGN SCREW SCA.pdf` tanggal 6 Mei 2026. Sebanyak 94 call sign berhasil dimatch ke master pilot. Tiga nama, yaitu `JDH`, `JMR`, dan `DPP`, masih disimpan sebagai audit unmatched karena belum memiliki row yang dapat dipastikan di `master_pilot.xlsx`.
+
+`initial_1` adalah initial hasil derivasi nama lengkap, sedangkan `call_sign` adalah alias operasional resmi. Keduanya dimasukkan ke `match_keys`. Jika alias Ops match unik tetapi rank pada pesan berbeda dari rank master, mapping tetap diperbolehkan karena captain dapat dilaporkan sebagai SIC; keunikan pilot tetap menjadi syarat.
 
 Saat `npm run sheets:sync:loop` berjalan, `MAPPING_PILOT` ikut di-refresh otomatis secara periodik. Default interval:
 
