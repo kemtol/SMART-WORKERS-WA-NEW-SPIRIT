@@ -11,7 +11,7 @@ Yang sudah ada di repo:
 - Listener WhatsApp berbasis Baileys.
 - Ingest service Python untuk menerima dan menyimpan pesan.
 - SQLite sebagai penyimpanan lokal.
-- Parser berbasis aturan untuk pesan `MVT Dept` dan `Mvt Arrival`.
+- Parser berbasis aturan untuk pesan MVT dan format fire-patrol `DEPARTURE/ARRIVAL MOVEMENT SORTIE`.
 - Sinkronisasi Google Sheets ke tab bronze, silver, master, audit, dan gold.
 - Builder `SORTIE_LOG` dengan grain satu baris per mission, dedup departure, matching arrival ACK, normalisasi pilot, dan quality gate.
 - Tab `ARRIVAL_ACK_EXCEPTIONS` dan `ABNORMAL_EVIDENCE_AUDIT` untuk audit.
@@ -170,7 +170,7 @@ Pada tahap parser awal, `pic_name` dan `sic_name` tetap disimpan apa adanya dari
    tabel raw_messages -> tabel flight_movements -> tab FLIGHT_RAW
 
 3. Bangun gold productivity
-   MVT Dept + Takeoff -> dedup -> match Arrival ACK -> quality gate -> tab SORTIE_LOG
+   departure report + Take Off/ATD -> dedup -> match Arrival ACK -> quality gate -> tab SORTIE_LOG
 
 4. Pembersihan AI lanjutan
    field bermasalah -> endpoint prompt -> gerbang validasi -> patch gold yang dapat diaudit
@@ -402,7 +402,7 @@ Produk siap dipakai awal jika:
 
 ```text
 1 row = 1 sortie / mission
-1 MVT Dept dengan Takeoff = 1 sortie
+1 departure report dengan Take Off/ATD = 1 sortie
 ```
 
 Route `TIM-BEO-TIM` tetap dihitung satu sortie, walaupun memiliki dua leg. `FLIGHT_RAW` boleh tetap menyimpan dua leg untuk audit, tetapi payload, pax, cargo, dan total load hanya dihitung satu kali di `SORTIE_LOG`.
@@ -421,7 +421,7 @@ Dataset ini digunakan untuk menjawab:
 Urutan otoritas data:
 
 ```text
-1. MVT Dept + Takeoff      bukti utama mission terjadi
+1. Departure + Take Off/ATD  bukti utama mission terjadi
 2. MVT Arrival            ACK atau konfirmasi tambahan
 3. RAW WhatsApp message   sumber audit dan trace
 ```
@@ -491,17 +491,17 @@ issue_notes
 
 ```text
 completed_ack_received
-  MVT Dept + Takeoff valid dan Arrival ACK berhasil dimatch.
+  Departure + Take Off/ATD valid dan Arrival ACK berhasil dimatch.
   confidence_level = HIGH
   productivity_include_flag = TRUE
 
 assumed_completed_no_arrival_ack
-  MVT Dept + Takeoff valid, ACK tidak ada, dan bukti abnormal tidak ditemukan.
+  Departure + Take Off/ATD valid, ACK tidak ada, dan bukti abnormal tidak ditemukan.
   confidence_level = HIGH_ASSUMED
   productivity_include_flag = TRUE
 
 needs_review_departure_no_ack_abnormal_found
-  MVT Dept + Takeoff valid, ACK tidak ada, dan ada bukti abnormal pada aircraft/date.
+  Departure + Take Off/ATD valid, ACK tidak ada, dan ada bukti abnormal pada aircraft/date.
   confidence_level = REVIEW
   productivity_include_flag = FALSE
 ```
@@ -578,23 +578,23 @@ Output lokal audit berada di `data/derived/` dan tidak ikut GitHub.
 Hasil builder dari SQLite lokal saat implementasi:
 
 ```text
-Total sortie                         210
+Total sortie                         212
 Duplicate mission_id                  0
-Completed dengan Arrival ACK        190
+Completed dengan Arrival ACK        192
 Assumed completed tanpa ACK          19
 Needs review                          1
-Productivity include                209
+Productivity include                211
 Pax total termasuk FOC              772
 Row dengan total_load_kg             190
 Total load yang terbaca          189.340 kg
 Total cargo yang terbaca         116.343 kg
 ```
 
-Angka status mission dan pax sesuai baseline PRD. Angka load/cargo lama `195.670 kg` dan `117.638 kg` tidak dapat direproduksi dari departure silver yang tersimpan saat ini. Pipeline tidak mengarang nilai untuk menutup selisih; row yang belum lengkap ditandai melalui quality flag dan exception audit.
+Baseline awal 210 sortie hanya mencakup format MVT. Setelah parser fire-patrol ditambahkan, dua sortie `PK-SCH` tanggal 17 dan 18 Juni ikut terbaca sehingga baseline menjadi 212. Angka load/cargo lama `195.670 kg` dan `117.638 kg` tetap tidak dapat direproduksi dari departure silver yang tersimpan saat ini. Pipeline tidak mengarang nilai untuk menutup selisih; row yang belum lengkap ditandai melalui quality flag dan exception audit.
 
 ### Kriteria Penerimaan
 
-- semua sortie memiliki `departure_raw_message_id` dan Takeoff;
+- semua sortie memiliki `departure_raw_message_id` dan bukti aktual `Take Off` atau `ATD`;
 - tidak ada duplicate `mission_id`;
 - field wajib registration, route, from, to, PIC raw, dan departure time terisi;
 - arrival-only tidak membuat sortie baru;
@@ -882,11 +882,13 @@ Format yang sudah didukung:
 
 - `MVT Dept`
 - `Mvt Arrival`
+- `DEPARTURE MOVEMENT SORTIE` dengan `ATD`
+- `ARRIVAL MOVEMENT SORTIE` dengan `ATA`
 - registrasi pesawat, contoh `PK-SNW`
 - tipe pesawat, contoh `C208B-EX`
 - urutan penerbangan harian, contoh `Flight 04`
 - rute multi-leg, contoh `AAP-RTU-AAP`
-- `Engine Start`, `Take Off`, `ETA`, `ATA`
+- `Engine Start`, `ENG. ON`, `Take Off`, `ATD`, `ETA`, `ATA`
 - pax, pax weight, baggage, cargo, total load
 
 Rute departure dipecah menjadi satu baris per leg. Contoh:

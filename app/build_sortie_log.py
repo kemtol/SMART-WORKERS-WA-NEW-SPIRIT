@@ -172,7 +172,11 @@ def normalize_code(value):
 
 
 def split_route(value):
-    raw_parts = [part.strip() for part in re.split(r"\s*[-/]\s*", str(value or "").strip()) if part.strip()]
+    raw_parts = [
+        part.strip()
+        for part in re.split(r"\s*[-/–—]\s*", str(value or "").strip())
+        if part.strip()
+    ]
     parts = []
     for part in raw_parts:
         compact = normalize_code(part)
@@ -542,15 +546,15 @@ def build_sortie_rows(departures, matches, abnormal_evidence, pilot_index, timez
         if matched:
             mission_status = "completed_ack_received"
             confidence = "HIGH"
-            completion_basis = "MVT Departure takeoff exists + MVT Arrival ACK matched"
+            completion_basis = "Departure Take Off/ATD exists + Arrival ACK matched"
         elif evidence:
             mission_status = "needs_review_departure_no_ack_abnormal_found"
             confidence = "REVIEW"
-            completion_basis = "MVT Departure takeoff exists, no ACK, abnormal evidence found"
+            completion_basis = "Departure Take Off/ATD exists, no ACK, abnormal evidence found"
         else:
             mission_status = "assumed_completed_no_arrival_ack"
             confidence = "HIGH_ASSUMED"
-            completion_basis = "MVT Departure takeoff exists, no abnormal evidence found"
+            completion_basis = "Departure Take Off/ATD exists, no abnormal evidence found"
 
         raw_flight_seq = str(departure["flight_seq"] or "").strip()
         flight_seq = raw_flight_seq.zfill(2) if raw_flight_seq else "NA"

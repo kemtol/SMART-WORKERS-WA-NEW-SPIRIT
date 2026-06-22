@@ -199,7 +199,7 @@ def split_route(route):
     if not route:
         return []
     route = re.sub(r"\s+", " ", route.strip())
-    return [part.strip() for part in re.split(r"\s*[-/]\s*", route) if part.strip()]
+    return [part.strip() for part in re.split(r"\s*[-/–—]\s*", route) if part.strip()]
 
 
 def extract_route(text):
@@ -222,7 +222,7 @@ def extract_load(pattern, text):
 def base_fields(text, mapping):
     registration = first_match(r"\bPK[-\s]?([A-Z]{3})\b", text)
     aircraft = first_match(r"\b(C\s*208\s*B?(?:\s*[- ]?\s*EX)?)\b", text)
-    flight_seq = first_match(r"\bFLIGHT\s*0*([0-9]+)\b", text)
+    flight_seq = first_match(r"\b(?:FLIGHT|SORTIE)\s*0*([0-9]+)\b", text)
     pax = first_match(r"(?im)^PAX[ \t]*:?[ \t]*([^\n]+)$", text)
     pax_weight_raw, pax_weight_kg = extract_load(r"(?im)^PAX[ \t]+(?:WEIGHT|LOAD)[ \t]*:?[ \t]*([^\n]+)$", text)
     baggage_raw, baggage_kg = extract_load(r"(?im)^(?:BGE|BAG)[ \t]*:?[ \t]*([^\n]+)$", text)
@@ -252,8 +252,18 @@ def parse_departure(text, mapping):
     if len(route_parts) < 2:
         return []
 
-    engine_start_time = normalize_time(first_match(r"\bENGINE[ \t]+START[ \t]*:?[ \t]*([0-2]?\d[ \t]*[:.][ \t]*[0-5]\d[ \t]*z?)", text))
-    takeoff_time = normalize_time(first_match(r"\bTAKE[ \t]*OFF[ \t]*:?[ \t]*([0-2]?\d[ \t]*[:.][ \t]*[0-5]\d[ \t]*z?)", text))
+    engine_start_time = normalize_time(
+        first_match(
+            r"\b(?:ENGINE[ \t]+START|ENG\.?[ \t]*ON)[ \t]*:?[ \t]*([0-2]?\d[ \t]*[:.][ \t]*[0-5]\d[ \t]*z?)",
+            text,
+        )
+    )
+    takeoff_time = normalize_time(
+        first_match(
+            r"\b(?:TAKE[ \t]*OFF|ATD(?:[ \t]+[A-Z]{3})?)[ \t]*:?[ \t]*([0-2]?\d[ \t]*[:.][ \t]*[0-5]\d[ \t]*z?)",
+            text,
+        )
+    )
     eta_airport_code = first_match(r"\bETA[ \t]+([A-Z]{3})[ \t]*:?[ \t]*[0-2]?\d[ \t]*[:.][ \t]*[0-5]\d", text)
     eta_time = normalize_time(first_match(r"\bETA[ \t]+[A-Z]{3}[ \t]*:?[ \t]*([0-2]?\d[ \t]*[:.][ \t]*[0-5]\d[ \t]*z?)", text))
     eta_airport = airport_for_token(eta_airport_code, mapping) if eta_airport_code else None
@@ -287,7 +297,8 @@ def parse_departure(text, mapping):
 
 
 def parse_arrival(text, mapping):
-    from_place = first_match(r"\bFROM\s*:?\s*([^\n]+)", text)
+    is_sortie_movement = "ARRIVAL MOVEMENT SORTIE" in text.upper()
+    from_place = None if is_sortie_movement else first_match(r"\bFROM\s*:?\s*([^\n]+)", text)
     from_airport = airport_for_token(from_place, mapping) if from_place else None
     ata_airport_code = first_match(r"\bATA[ \t]+([A-Z]{3})[ \t]*:?[ \t]*[0-2]?\d[ \t]*[:.][ \t]*[0-5]\d", text)
     ata_time = normalize_time(first_match(r"\bATA[ \t]+[A-Z]{3}[ \t]*:?[ \t]*([0-2]?\d[ \t]*[:.][ \t]*[0-5]\d[ \t]*z?)", text))
@@ -298,7 +309,7 @@ def parse_arrival(text, mapping):
     row = {
         "movement_type": "arrival",
         "leg_index": 1,
-        "route_full": None,
+        "route_full": extract_route(text) if is_sortie_movement else None,
         "from_place": from_place,
         "next_route": next_route,
         "next_text": next_text,
@@ -321,13 +332,14 @@ def parse_movements(text, mapping=None):
     mapping = mapping or load_mapping()
     cleaned = clean_text(text)
     upper = cleaned.upper()
-    if "MVT" not in upper:
+    is_sortie_movement = "DEPARTURE MOVEMENT SORTIE" in upper or "ARRIVAL MOVEMENT SORTIE" in upper
+    if "MVT" not in upper and not is_sortie_movement:
         return []
 
     base = base_fields(cleaned, mapping)
     if "ARRIVAL" in upper:
         rows = parse_arrival(cleaned, mapping)
-    elif "DEPT" in upper or "DEP" in upper:
+    elif "DEPARTURE MOVEMENT SORTIE" in upper or "DEPT" in upper or "DEP" in upper:
         rows = parse_departure(cleaned, mapping)
     else:
         return []
