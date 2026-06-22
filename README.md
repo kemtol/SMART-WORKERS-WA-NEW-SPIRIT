@@ -2,7 +2,7 @@
 
 Worker ini membaca pesan operasional dari grup WhatsApp `New Spirit`, menyimpan pesan mentah ke SQLite, melakukan parsing awal untuk format MVT departure/arrival, lalu mengirim hasilnya ke Google Sheets.
 
-Dokumen ini sekaligus menjadi README teknis dan PRD sederhana untuk target berikutnya: dataset `RAW`, `FLIGHT_RAW`, dan `FLIGHT_OPS` dengan pembersihan mendalam memakai AI.
+Dokumen ini sekaligus menjadi README teknis dan PRD. Dataset utama terdiri dari `RAW` sebagai bronze, `FLIGHT_RAW` sebagai silver, dan `SORTIE_LOG` sebagai gold untuk dashboard produktivitas.
 
 ## Status Saat Ini
 
@@ -12,14 +12,17 @@ Yang sudah ada di repo:
 - Ingest service Python untuk menerima dan menyimpan pesan.
 - SQLite sebagai penyimpanan lokal.
 - Parser berbasis aturan untuk pesan `MVT Dept` dan `Mvt Arrival`.
-- Sinkronisasi Google Sheets ke tab `RAW`, `FLIGHT_RAW`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT`.
+- Sinkronisasi Google Sheets ke tab bronze, silver, master, audit, dan gold.
+- Builder `SORTIE_LOG` dengan grain satu baris per mission, dedup departure, matching arrival ACK, normalisasi pilot, dan quality gate.
+- Tab `ARRIVAL_ACK_EXCEPTIONS` dan `ABNORMAL_EVIDENCE_AUDIT` untuk audit.
+- Refresh otomatis `SORTIE_LOG` setiap satu jam.
 - Script migrasi data operasional lokal.
 - Command suite worker: `./connect.sh`, `./status.sh`, dan `./stop.sh`.
 - Systemd user service untuk menjaga worker tetap hidup dan auto-start setelah reboot.
 
 Yang belum menjadi implementasi penuh:
 
-- Tab gold `FLIGHT_OPS`.
+- Pembersihan AI lanjutan untuk memperbaiki field yang masih `MISSING`, `NEEDS_PARSE`, atau `NEEDS_REVIEW`.
 - Worker pembersihan mendalam AI setiap 15 menit.
 - Tombol atau kontrol pemeriksaan ulang paksa per baris di Google Sheets.
 - Prompt endpoint produksi untuk membersihkan data.
@@ -33,7 +36,9 @@ Grup WhatsApp New Spirit
   -> Baileys listener
   -> Python ingest service
   -> SQLite raw_messages / flight_movements
-  -> Google Sheets tab RAW / FLIGHT_RAW
+  -> Google Sheets RAW / FLIGHT_RAW / FLIGHT_TIMELINE
+  -> builder sortie + quality gate
+  -> Google Sheets SORTIE_LOG / ARRIVAL_ACK_EXCEPTIONS / ABNORMAL_EVIDENCE_AUDIT
 ```
 
 `RAW` adalah tab bronze untuk pesan mentah. `FLIGHT_RAW` adalah tab silver untuk hasil parser berbasis aturan. `Movements_Internal` adalah tab legacy dan tidak dipakai lagi.
@@ -93,7 +98,9 @@ Lifecycle worker dianggap benar jika:
 - `./status.sh` cukup untuk melihat apakah ingest, sync, dan listener sedang hidup.
 - `./stop.sh` benar-benar menghentikan worker dan mencegah auto-start berikutnya sampai `./connect.sh` dijalankan lagi.
 
-## PRD: Dataset Flight Ops Hasil Pembersihan AI
+## PRD Lanjutan: Pembersihan AI per Movement
+
+Bagian ini adalah rencana enrichment lanjutan, bukan kontrak gold dashboard saat ini. Kontrak final productivity berada pada bagian `SORTIE_LOG`; output AI nantinya harus memperbaiki field berkualitas rendah secara terkontrol dan memicu rebuild `SORTIE_LOG`.
 
 ### Tujuan Produk
 
@@ -103,25 +110,28 @@ Sistem harus:
 
 - Menyimpan pesan WhatsApp mentah sebagai sumber kebenaran.
 - Menyimpan hasil parser berbasis aturan sebagai lapisan antara yang bisa diaudit.
-- Menghasilkan dataset final yang sudah melewati pembersihan AI dan gerbang validasi.
+- Menghasilkan kandidat enrichment yang sudah melewati pembersihan AI dan gerbang validasi.
 - Tidak memproses ulang baris yang sudah bersih, kecuali pengguna meminta pemeriksaan ulang paksa.
 
 ### Lapisan Dataset
 
-Target Google Sheets berikutnya berisi tiga tab utama:
+Lapisan utama Google Sheets:
 
 ```text
 RAW         dataset bronze: pesan WhatsApp mentah
 FLIGHT_RAW  dataset silver: hasil parser berbasis aturan
-FLIGHT_OPS  dataset gold: hasil pembersihan AI dan validasi
+SORTIE_LOG  dataset gold: satu baris per sortie, siap dipakai dashboard productivity
 ```
 
 Tab tambahan untuk konsumsi harian Ops:
 
 ```text
 FLIGHT_TIMELINE  view rotasi pesawat yang sudah diurutkan untuk melihat kronologi per registration
+FLIGHT_OPS       area eksperimen deepclean AI per movement; bukan source productivity utama
 MASTER_IATA      master airport internal plus score traffic aktual dari flight movement
 MAPPING_PILOT    master pilot dan kandidat alias/initial yang dipakai Ops di lapangan
+ARRIVAL_ACK_EXCEPTIONS  arrival yang belum memiliki departure match
+ABNORMAL_EVIDENCE_AUDIT pesan abnormal yang menjadi dasar status review
 ```
 
 `RAW` hanya boleh ditambah. Isi tab ini tidak boleh diedit manual karena menjadi sumber kebenaran.
@@ -130,7 +140,7 @@ MAPPING_PILOT    master pilot dan kandidat alias/initial yang dipakai Ops di lap
 
 Untuk pesan arrival yang tidak membawa tanggal operasi di teks mentah, `operation_date` diisi dari tanggal pesan WhatsApp dalam zona waktu `Asia/Jakarta`. Kolom `chronology_sort_key` tersedia agar tim bisa filter `registration`, lalu sort ascending untuk melihat urutan movement per pesawat dengan lebih stabil.
 
-`FLIGHT_OPS` adalah dataset final untuk kebutuhan operasional. Baris hanya boleh masuk ke sini setelah melewati pembersihan AI dan gerbang validasi.
+`SORTIE_LOG` adalah dataset final untuk dashboard produktivitas. `FLIGHT_OPS` tetap disediakan sebagai area deepclean AI per movement, tetapi tidak dipakai untuk menghitung sortie agar route multi-leg tidak double count.
 
 `FLIGHT_TIMELINE` adalah view turunan dari `FLIGHT_RAW`. Tab ini tidak menjadi sumber kebenaran baru; ia hanya memudahkan user melihat urutan terbang aktual pesawat per hari dan per registration. Untuk membaca kronologi, filter `operation_date` dan `registration`, lalu sort ascending kolom `timeline_sort_key`. Kolom yang paling enak dibaca manusia adalah `event_datetime_local`, sedangkan `event_time` tetap menyimpan waktu Z dari pesan sumber.
 
@@ -138,7 +148,7 @@ Untuk pesan arrival yang tidak membawa tanggal operasi di teks mentah, `operatio
 
 `MAPPING_PILOT` adalah master pilot yang dinormalisasi dari master crew internal. Tab ini dipakai untuk menjembatani nama lengkap pilot dengan cara penulisan di grup Ops seperti `Capt.PFK`, `Capt. Oscar K`, `Fo. NRB`, atau `FO. Juven`.
 
-Field crew yang dipakai di silver dan gold:
+Field crew yang dipakai di silver dan output enrichment:
 
 ```text
 pic_name
@@ -148,7 +158,7 @@ crew_text
 
 `pic_name` diambil dari label `PIC`, `sic_name` dari label `SIC`, dan `crew_text` menyimpan ringkasan crew yang dekat dengan teks sumber. Field ini biasanya tersedia di pesan `MVT Dept`; pada pesan arrival field ini boleh kosong.
 
-Pada tahap parser awal, `pic_name` dan `sic_name` tetap disimpan apa adanya dari pesan Ops. Normalisasi ke nama pilot master dilakukan di tahap deepclean/gold dengan bantuan `MAPPING_PILOT`.
+Pada tahap parser awal, `pic_name` dan `sic_name` tetap disimpan apa adanya dari pesan Ops. `SORTIE_LOG` sudah melakukan exact mapping konservatif ke master; AI hanya boleh menangani alias yang belum match atau ambigu dengan audit yang jelas.
 
 ### Alur E2E Target
 
@@ -159,8 +169,11 @@ Pada tahap parser awal, `pic_name` dan `sic_name` tetap disimpan apa adanya dari
 2. Parse dan normalisasi
    tabel raw_messages -> tabel flight_movements -> tab FLIGHT_RAW
 
-3. Pembersihan AI
-   baris pending di FLIGHT_RAW -> endpoint prompt -> gerbang validasi -> tab FLIGHT_OPS
+3. Bangun gold productivity
+   MVT Dept + Takeoff -> dedup -> match Arrival ACK -> quality gate -> tab SORTIE_LOG
+
+4. Pembersihan AI lanjutan
+   field bermasalah -> endpoint prompt -> gerbang validasi -> patch gold yang dapat diaudit
 ```
 
 Pesan mentah harus selalu disimpan agar parser dan proses pembersihan AI bisa dijalankan ulang atau diaudit di kemudian hari.
@@ -221,7 +234,7 @@ Makna status:
 
 - `pending`: siap diproses oleh jadwal otomatis berikutnya.
 - `cleaning`: sedang diproses oleh worker.
-- `cleaned`: sudah berhasil masuk dataset gold dan tidak diproses ulang normal.
+- `cleaned`: sudah berhasil masuk area enrichment dan tidak diproses ulang normal.
 - `failed`: proses AI atau validasi gagal, bisa dicoba ulang dengan batas percobaan ulang.
 - `needs_review`: butuh review manusia sebelum masuk `FLIGHT_OPS`.
 - `skipped`: sengaja dilewati karena tidak memenuhi kriteria.
@@ -264,7 +277,7 @@ AI harus memperlakukan `source_text` sebagai sumber utama. Hasil parser berbasis
 
 Endpoint prompt harus mengembalikan JSON ketat. Respons berupa paragraf atau prosa tidak boleh dianggap sukses.
 
-Field dataset gold yang direkomendasikan:
+Field kandidat enrichment yang direkomendasikan:
 
 ```text
 schema_version
@@ -324,7 +337,7 @@ Buku kerja Google Sheets target berisi:
 
 - `RAW`: pesan WhatsApp mentah.
 - `FLIGHT_RAW`: hasil parser plus status pembersihan mendalam.
-- `FLIGHT_OPS`: data gold hasil pembersihan AI.
+- `FLIGHT_OPS`: kandidat enrichment per movement hasil pembersihan AI.
 - `FLIGHT_TIMELINE`: view kronologi actual departure/arrival.
 - `MASTER_IATA`: master airport internal dan score traffic.
 - `MAPPING_PILOT`: master pilot dan kandidat alias/initial crew.
@@ -379,7 +392,216 @@ Produk siap dipakai awal jika:
 - Checkbox `deepclean_force_check` memicu pemrosesan ulang baris tersebut.
 - Respons AI yang gagal tidak mencemari `FLIGHT_OPS`.
 - Setiap baris `FLIGHT_OPS` bisa ditelusuri ke `movement_id`, `raw_message_id`, dan `source_text`.
-- Versi prompt dan model AI tercatat di setiap baris gold.
+- Versi prompt dan model AI tercatat di setiap baris enrichment.
+
+## PRD: SORTIE_LOG Final Dataset
+
+### Tujuan dan Grain
+
+`SORTIE_LOG` adalah gold dataset utama untuk dashboard produktivitas operasional unscheduled/non-scheduled.
+
+```text
+1 row = 1 sortie / mission
+1 MVT Dept dengan Takeoff = 1 sortie
+```
+
+Route `TIM-BEO-TIM` tetap dihitung satu sortie, walaupun memiliki dua leg. `FLIGHT_RAW` boleh tetap menyimpan dua leg untuk audit, tetapi payload, pax, cargo, dan total load hanya dihitung satu kali di `SORTIE_LOG`.
+
+Dataset ini digunakan untuk menjawab:
+
+- sortie per hari, aircraft, route, dan base;
+- total pax, cargo, dan load;
+- PIC dan SIC yang bertugas;
+- mission dengan arrival ACK;
+- mission yang diasumsikan selesai tanpa ACK;
+- mission yang perlu review karena ada bukti abnormal.
+
+### Sumber Kebenaran
+
+Urutan otoritas data:
+
+```text
+1. MVT Dept + Takeoff      bukti utama mission terjadi
+2. MVT Arrival            ACK atau konfirmasi tambahan
+3. RAW WhatsApp message   sumber audit dan trace
+```
+
+Arrival tanpa departure match tidak membuat sortie baru. Row tersebut masuk `ARRIVAL_ACK_EXCEPTIONS`.
+
+### Input
+
+- tabel SQLite `raw_messages`;
+- tabel SQLite `flight_movements` hasil parser;
+- `data/reference/mapping_pilot.json` untuk normalisasi PIC/SIC;
+- `data/reference/master_iata.json` untuk enrichment airport yang tersedia.
+
+### Field Utama
+
+```text
+mission_id
+operation_date
+registration
+aircraft_type
+aircraft_type_quality
+flight_seq
+route_full
+route_type
+from
+to
+via
+pic_raw
+pic_full
+sic_raw
+sic_full
+departure_time_z
+departure_datetime_local
+departure_datetime_utc
+pax
+pax_total
+pax_weight_kg
+baggage_kg
+cargo_text
+cargo_kg
+cargo_ton
+cargo_quality
+total_load_kg
+total_load_ton
+arrival_ack_status
+arrival_time_z
+arrival_datetime_local
+arrival_datetime_utc
+mission_status
+confidence_level
+completion_basis
+productivity_include_flag
+load_quality
+pax_quality
+abnormal_flag_same_aircraft_date
+abnormal_evidence_count
+abnormal_evidence_sample
+departure_raw_message_id
+arrival_raw_message_id
+departure_movement_id
+arrival_movement_id
+parse_confidence
+issue_notes
+```
+
+### Status Mission
+
+```text
+completed_ack_received
+  MVT Dept + Takeoff valid dan Arrival ACK berhasil dimatch.
+  confidence_level = HIGH
+  productivity_include_flag = TRUE
+
+assumed_completed_no_arrival_ack
+  MVT Dept + Takeoff valid, ACK tidak ada, dan bukti abnormal tidak ditemukan.
+  confidence_level = HIGH_ASSUMED
+  productivity_include_flag = TRUE
+
+needs_review_departure_no_ack_abnormal_found
+  MVT Dept + Takeoff valid, ACK tidak ada, dan ada bukti abnormal pada aircraft/date.
+  confidence_level = REVIEW
+  productivity_include_flag = FALSE
+```
+
+### Matching dan Dedup
+
+Departure didedup dengan kunci:
+
+```text
+operation_date + registration + flight_seq + route_full + departure_time_z
+```
+
+Jika ada repost/revisi, builder mempertahankan row dengan kelengkapan field terbaik lalu `raw_message_id` terbaru sebagai tie-breaker.
+
+Arrival ACK dimatch one-to-one berdasarkan:
+
+```text
+operation_date + registration + flight_seq + final destination route
+```
+
+Fallback terbatas:
+
+- departure tanpa `flight_seq` memilih ACK terdekat dengan registration/date/final destination yang sama dan menulis alasan fallback ke `issue_notes`;
+- selisih arrival hingga 30 menit sebelum departure masih diterima tetapi diberi `issue_notes`, karena ada data lapangan dengan timestamp typo;
+- token route gabung enam karakter seperti `MGLTMH` dinormalisasi menjadi `MGL-TMH`.
+
+Route mismatch tidak diterima hanya karena registration/date/flight sama.
+
+### Aturan Produktivitas dan Quality
+
+- `pax_total` menjumlahkan tiga angka utama dan angka FOC dalam catatan pax. Contoh `09/01/00(1 FOC SCA)` menjadi 11.
+- `total_load_kg` memakai nilai total load dari departure raw. Nilai ini tidak dihitung ulang dari komponen agar payload tidak double count.
+- `total_load_ton = total_load_kg / 1000`.
+- `cargo_ton = cargo_kg / 1000`.
+- `load_quality` bernilai `COMPLETE`, `PARTIAL`, atau `MISSING`.
+- `pax_quality` bernilai `COMPLETE`, `MISSING`, atau `NEEDS_REVIEW`.
+- `cargo_quality` bernilai `COMPLETE`, `MISSING`, atau `NEEDS_PARSE`.
+- `aircraft_type_quality` bernilai `FROM_DEPARTURE_RAW` atau `MISSING`.
+
+Field kosong tidak boleh ditebak tanpa bukti raw/master. Data tersebut tetap diberi quality flag untuk deepclean atau review berikutnya.
+
+### Jadwal dan Command
+
+Build lokal tanpa menulis Google Sheets:
+
+```bash
+npm run sortie:build
+```
+
+Validasi baseline 12-18 Juni 2026:
+
+```bash
+npm run sortie:check:12-18
+```
+
+Build dan replace tiga tab Google Sheets:
+
+```bash
+npm run sortie:sync
+```
+
+Saat service `new-spirit-sheets-sync.service` hidup, gold dataset di-refresh setiap satu jam. Konfigurasi:
+
+```text
+SORTIE_LOG_AUTO_SYNC=1
+SORTIE_LOG_REFRESH_SECONDS=3600
+SORTIE_LOG_FROM_DATE=2026-06-12
+```
+
+Output lokal audit berada di `data/derived/` dan tidak ikut GitHub.
+
+### Validasi Baseline 12-18 Juni 2026
+
+Hasil builder dari SQLite lokal saat implementasi:
+
+```text
+Total sortie                         210
+Duplicate mission_id                  0
+Completed dengan Arrival ACK        190
+Assumed completed tanpa ACK          19
+Needs review                          1
+Productivity include                209
+Pax total termasuk FOC              772
+Row dengan total_load_kg             190
+Total load yang terbaca          189.340 kg
+Total cargo yang terbaca         116.343 kg
+```
+
+Angka status mission dan pax sesuai baseline PRD. Angka load/cargo lama `195.670 kg` dan `117.638 kg` tidak dapat direproduksi dari departure silver yang tersimpan saat ini. Pipeline tidak mengarang nilai untuk menutup selisih; row yang belum lengkap ditandai melalui quality flag dan exception audit.
+
+### Kriteria Penerimaan
+
+- semua sortie memiliki `departure_raw_message_id` dan Takeoff;
+- tidak ada duplicate `mission_id`;
+- field wajib registration, route, from, to, PIC raw, dan departure time terisi;
+- arrival-only tidak membuat sortie baru;
+- route multi-leg tetap satu row sehingga payload tidak double count;
+- assumed completed selalu `HIGH_ASSUMED`;
+- no-ACK dengan evidence abnormal selalu `REVIEW` dan dikeluarkan dari productivity;
+- setiap row dapat ditelusuri kembali ke raw message dan movement source.
 
 ## Struktur Repo
 
@@ -387,6 +609,7 @@ Produk siap dipakai awal jika:
 src/                         Worker Node/Baileys untuk WhatsApp
 app/                         Service Python, parser, dan Google Sheets sync
 bin/                         Script runner berulang dan migrasi data lokal
+tests/                       Unit test pipeline gold SORTIE_LOG
 config/airport_mappings.json Mapping airport cadangan
 config/google-sheets.env.example
 integrations/google-sheets-webhook.gs
@@ -416,6 +639,9 @@ RAW
 FLIGHT_RAW
 FLIGHT_OPS
 FLIGHT_TIMELINE
+SORTIE_LOG
+ARRIVAL_ACK_EXCEPTIONS
+ABNORMAL_EVIDENCE_AUDIT
 MASTER_IATA
 MAPPING_PILOT
 ```
@@ -451,6 +677,9 @@ GOOGLE_SHEETS_FLIGHT_OPS_TAB=FLIGHT_OPS
 GOOGLE_SHEETS_FLIGHT_TIMELINE_TAB=FLIGHT_TIMELINE
 GOOGLE_SHEETS_MASTER_IATA_TAB=MASTER_IATA
 GOOGLE_SHEETS_MAPPING_PILOT_TAB=MAPPING_PILOT
+GOOGLE_SHEETS_SORTIE_LOG_TAB=SORTIE_LOG
+GOOGLE_SHEETS_ARRIVAL_EXCEPTION_TAB=ARRIVAL_ACK_EXCEPTIONS
+GOOGLE_SHEETS_ABNORMAL_AUDIT_TAB=ABNORMAL_EVIDENCE_AUDIT
 OPS_OPERATION_TIMEZONE=Asia/Jakarta
 MASTER_IATA_AUTO_SYNC=1
 MASTER_IATA_REFRESH_SECONDS=1800
@@ -459,16 +688,20 @@ MASTER_IATA_SOURCE_GID=980038686
 MAPPING_PILOT_AUTO_SYNC=1
 MAPPING_PILOT_REFRESH_SECONDS=3600
 MAPPING_PILOT_SOURCE_SPREADSHEET_ID=1fAUbyfFrMw5VPK2hb_Ocg3-xjLjr_x6p
+SORTIE_LOG_AUTO_SYNC=1
+SORTIE_LOG_REFRESH_SECONDS=3600
+SORTIE_LOG_FROM_DATE=2026-06-12
 ```
 
 File `config/google-sheets.env` tidak boleh di-commit.
 
-Buat atau pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT` tersedia di Google Sheets:
+Buat atau pastikan tab utama tersedia di Google Sheets:
 
 ```bash
 npm run sheets:ensure
 npm run master:iata:sync
 npm run mapping:pilot:sync
+npm run sortie:sync
 ```
 
 Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT` sudah benar:
@@ -819,12 +1052,13 @@ Artinya `MAPPING_PILOT` dihitung ulang setiap 1 jam. Refresh ini cukup periodik 
 
 ## Sinkronisasi ke Google Sheets
 
-Pastikan tab `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT` sudah ada:
+Pastikan tab bronze, silver, master, dan gold sudah ada:
 
 ```bash
 npm run sheets:ensure
 npm run master:iata:sync
 npm run mapping:pilot:sync
+npm run sortie:sync
 ```
 
 Kirim pesan mentah dan movement rows yang belum tersinkron satu kali:
@@ -839,12 +1073,13 @@ Jalankan sinkronisasi terus-menerus:
 npm run sheets:sync:loop
 ```
 
-Loop ini menjalankan dua proses dalam satu service:
+Loop ini menjalankan empat proses dalam satu service:
 
 ```text
 1. sync utama RAW / FLIGHT_RAW / FLIGHT_TIMELINE secara kontinu
 2. refresh MASTER_IATA periodik sesuai MASTER_IATA_REFRESH_SECONDS
 3. refresh MAPPING_PILOT periodik sesuai MAPPING_PILOT_REFRESH_SECONDS
+4. rebuild SORTIE_LOG dan tab audit periodik sesuai SORTIE_LOG_REFRESH_SECONDS
 ```
 
 Jika schema `FLIGHT_RAW` berubah dan tab perlu dibangun ulang dari SQLite lokal:
@@ -992,5 +1227,5 @@ Item di atas sudah tercakup oleh `.gitignore`.
 - Raw message adalah sumber kebenaran. Jangan edit manual.
 - Parser berbasis aturan tetap berguna walaupun nantinya ada pembersihan AI.
 - Pembersihan AI harus punya skema dan gerbang validasi yang ketat.
-- `FLIGHT_OPS` hanya boleh berisi baris yang sudah lolos validasi.
+- `FLIGHT_OPS` hanya boleh berisi kandidat enrichment yang sudah lolos validasi dan tidak menjadi source count productivity.
 - Data operasional lokal boleh dimigrasikan antar server, tetapi jangan dipublikasikan ke repo publik.
