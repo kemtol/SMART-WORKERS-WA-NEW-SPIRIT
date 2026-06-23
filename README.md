@@ -1,6 +1,6 @@
 # New Spirit WhatsApp Worker
 
-Worker ini membaca pesan operasional dari grup WhatsApp `New Spirit`, menyimpan pesan mentah ke SQLite, melakukan parsing awal untuk format MVT departure/arrival, lalu mengirim hasilnya ke Google Sheets.
+Worker ini membaca pesan operasional dari grup WhatsApp `New Spirit`, menyimpan pesan mentah ke SQLite, melakukan parsing awal untuk format MVT departure/arrival, merekonsiliasinya dengan AFML, lalu mengirim hasilnya ke Google Sheets.
 
 Dokumen ini sekaligus menjadi README teknis dan PRD. Dataset utama terdiri dari `RAW` sebagai bronze, `FLIGHT_RAW` sebagai silver, dan `SORTIE_LOG` sebagai gold untuk dashboard produktivitas.
 
@@ -16,6 +16,8 @@ Yang sudah ada di repo:
 - Builder `SORTIE_LOG` dengan grain satu baris per mission, dedup departure, matching arrival ACK, normalisasi pilot, dan quality gate.
 - Tab `ARRIVAL_ACK_EXCEPTIONS` dan `ABNORMAL_EVIDENCE_AUDIT` untuk audit.
 - Refresh otomatis `SORTIE_LOG` setiap satu jam.
+- Collector AFML read-only, parser leg/block time, snapshot audit, dan rekonsiliasi terhadap sortie WhatsApp.
+- Refresh AFML otomatis setiap 30 menit.
 - Script migrasi data operasional lokal.
 - Command suite worker: `./connect.sh`, `./status.sh`, dan `./stop.sh`.
 - Systemd user service untuk menjaga worker tetap hidup dan auto-start setelah reboot.
@@ -39,6 +41,11 @@ Grup WhatsApp New Spirit
   -> Google Sheets RAW / FLIGHT_RAW / FLIGHT_TIMELINE
   -> builder sortie + quality gate
   -> Google Sheets SORTIE_LOG / ARRIVAL_ACK_EXCEPTIONS / ABNORMAL_EVIDENCE_AUDIT
+
+AMS AFML (read-only)
+  -> authenticated list/detail collector
+  -> SQLite afml_records / afml_legs / afml_snapshots / afml_reconciliation
+  -> Google Sheets AFML_RAW / AFML_LEGS / AFML_RECON
 ```
 
 `RAW` adalah tab bronze untuk pesan mentah. `FLIGHT_RAW` adalah tab silver untuk hasil parser berbasis aturan. `Movements_Internal` adalah tab legacy dan tidak dipakai lagi.
@@ -60,7 +67,7 @@ Requirement lifecycle:
 - `./connect.sh` adalah entrypoint utama untuk koneksi dan start worker.
 - Jika belum ada sesi WhatsApp valid, `./connect.sh` harus menampilkan QR di terminal.
 - Setelah QR discan dan koneksi tervalidasi, proses operasional harus detach ke background.
-- Worker yang harus berjalan adalah ingest service, Google Sheets sync, dan WhatsApp listener.
+- Worker yang harus berjalan adalah ingest service, Google Sheets sync, AFML sync, dan WhatsApp listener.
 - Setiap pemanggilan `./connect.sh` harus stop/kill worker lama dari repo ini, lalu start ulang stack dari awal.
 - Jika auth WhatsApp rusak atau session logout dari sisi WhatsApp, user menjalankan `./connect.sh --reset` untuk scan QR baru.
 - Worker harus auto-restart jika crash atau koneksi network putus sementara.
@@ -95,7 +102,7 @@ Lifecycle worker dianggap benar jika:
 - User bisa menjalankan `./connect.sh`, scan QR, lalu terminal bisa ditutup tanpa mematikan worker.
 - Setelah reboot, worker hidup lagi otomatis tanpa scan QR selama session WhatsApp masih valid.
 - Jika WhatsApp logout atau linked device dicabut, status menunjukkan perlu reconnect dan user bisa menjalankan `./connect.sh --reset`.
-- `./status.sh` cukup untuk melihat apakah ingest, sync, dan listener sedang hidup.
+- `./status.sh` cukup untuk melihat apakah ingest, Google Sheets sync, AFML sync, dan listener sedang hidup.
 - `./stop.sh` benar-benar menghentikan worker dan mencegah auto-start berikutnya sampai `./connect.sh` dijalankan lagi.
 
 ## PRD Lanjutan: Pembersihan AI per Movement
@@ -132,6 +139,9 @@ MASTER_IATA      master airport internal plus score traffic aktual dari flight m
 MAPPING_PILOT    master pilot dan kandidat alias/initial yang dipakai Ops di lapangan
 ARRIVAL_ACK_EXCEPTIONS  arrival yang belum memiliki departure match
 ABNORMAL_EVIDENCE_AUDIT pesan abnormal yang menjadi dasar status review
+AFML_RAW        latest AFML header/summary per page untuk audit sumber eksternal
+AFML_LEGS       detail leg AFML, termasuk block off/on, takeoff, landing, dan duration
+AFML_RECON      hasil perbandingan satu sortie WhatsApp dengan rangkaian leg AFML
 ```
 
 `RAW` hanya boleh ditambah. Isi tab ini tidak boleh diedit manual karena menjadi sumber kebenaran.
@@ -172,7 +182,10 @@ Pada tahap parser awal, `pic_name` dan `sic_name` tetap disimpan apa adanya dari
 3. Bangun gold productivity
    departure report + Take Off/ATD -> dedup -> match Arrival ACK -> quality gate -> tab SORTIE_LOG
 
-4. Pembersihan AI lanjutan
+4. Rekonsiliasi AFML
+   AFML list/detail -> parser leg/block -> matching sortie -> quality flags -> tab AFML_RECON
+
+5. Pembersihan AI lanjutan
    field bermasalah -> endpoint prompt -> gerbang validasi -> patch gold yang dapat diaudit
 ```
 
@@ -603,6 +616,82 @@ Baseline awal 210 sortie hanya mencakup format MVT. Setelah parser fire-patrol d
 - no-ACK dengan evidence abnormal selalu `REVIEW` dan dikeluarkan dari productivity;
 - setiap row dapat ditelusuri kembali ke raw message dan movement source.
 
+## PRD: Rekonsiliasi AFML
+
+### Tujuan
+
+AFML dipakai sebagai sumber pembanding resmi untuk meningkatkan kualitas data WhatsApp, terutama rute aktual, crew, takeoff/landing, block off/on, flight time, block time, dan cycle. Integrasi ini bersifat read-only dan tidak pernah mengubah data di AMS.
+
+AFML tidak langsung menimpa `RAW`, `FLIGHT_RAW`, atau `SORTIE_LOG`. Konflik disimpan sebagai evidence agar tim Ops dapat memutuskan koreksi yang benar.
+
+### Sumber dan Penyimpanan
+
+Worker membaca endpoint authenticated berikut:
+
+```text
+/v1/AFML/afmlAjax/{offset}     daftar AFML dengan pagination dan date filter
+/v1/AFML/detail/{encoded_id}   header, crew, total, dan detail leg AFML
+```
+
+Data disimpan ke SQLite:
+
+```text
+afml_records         latest header dan total per AFML page
+afml_legs            satu row per leg AFML
+afml_snapshots       HTML sumber terkompresi per versi content hash
+afml_reconciliation hasil matching sortie WhatsApp ke AFML
+```
+
+Output Google Sheets:
+
+```text
+AFML_RAW    satu row per AFML page
+AFML_LEGS   satu row per leg fisik
+AFML_RECON  satu row per sortie WhatsApp yang dibandingkan
+```
+
+### Matching dan Quality Gate
+
+Kandidat match wajib memiliki `operation_date` dan `registration` yang sama. Worker lalu mencari rangkaian leg AFML yang identik dengan `route_full` WhatsApp dan memilih takeoff terdekat. Batas default selisih waktu adalah 120 menit.
+
+Status rekonsiliasi:
+
+- `MATCHED`: rute cocok, AFML memiliki actual time, waktu dalam toleransi, dan crew tidak konflik.
+- `AFML_INCOMPLETE`: rute ditemukan tetapi block/flight time AFML masih nol.
+- `TIME_CONFLICT`: rute cocok tetapi selisih takeoff lebih dari toleransi.
+- `CREW_CONFLICT`: rute dan waktu cocok tetapi crew berbeda.
+- `WA_ONLY`: belum ditemukan rangkaian leg AFML yang cocok.
+
+Repost departure WhatsApp dideduplikasi dengan grain `operation_date + registration + flight_seq + route_full + takeoff_time`, sehingga satu sortie tidak dibandingkan dua kali.
+
+### Jadwal dan Keamanan
+
+Worker `new-spirit-afml-sync.service` berjalan setiap 30 menit dan memeriksa daftar 14 hari terakhir agar revisi AFML ikut tertangkap. Detail hari ini dan kemarin selalu dicek; detail yang lebih lama hanya diambil ulang saat summary berubah atau setelah 24 jam. HTML detail hanya menambah snapshot baru jika content operasional berubah; perubahan session atau markup UI tidak dianggap revisi.
+
+Credential disimpan hanya di `config/afml.env`, permission `600`, dan diabaikan Git. Gunakan akun AMS yang memiliki izin read-only jika tersedia. Password tidak boleh ditulis ke README, source code, command argument, log, atau Google Sheets.
+
+Command manual:
+
+```bash
+npm run afml:sync          # SQLite + Google Sheets
+npm run afml:sync:local    # SQLite saja
+```
+
+Backfill range tertentu:
+
+```bash
+python3 app/afml_sync.py --from-date 2026-06-12 --to-date 2026-06-23 --sync-sheets
+```
+
+### Kriteria Penerimaan
+
+- setiap AFML page memiliki `afml_id`, tanggal, registrasi, page number, dan audit snapshot;
+- setiap leg memiliki route, block off/on, takeoff, landing, block minutes, dan flight minutes;
+- tidak ada duplicate `afml_id`, `afml_leg_id`, atau `reconciliation_id`;
+- integrasi hanya memanggil endpoint list/detail dan tidak memanggil endpoint create/edit/delete/lock;
+- conflict tidak menimpa gold dataset secara otomatis;
+- `./status.sh` menampilkan status dan hasil run AFML terakhir.
+
 ## Struktur Repo
 
 ```text
@@ -612,6 +701,7 @@ bin/                         Script runner berulang dan migrasi data lokal
 tests/                       Unit test pipeline gold SORTIE_LOG
 config/airport_mappings.json Mapping airport cadangan
 config/google-sheets.env.example
+config/afml.env.example      Template credential dan jadwal AFML
 integrations/google-sheets-webhook.gs
 ```
 
@@ -623,6 +713,7 @@ Data operasional lokal, credential WhatsApp, pesan, database, log, dan PID tidak
 - Python 3.12 atau lebih baru.
 - Nomor WhatsApp yang boleh join grup target.
 - Google Sheet dengan deployment Apps Script Web App.
+- Akun AMS yang memiliki akses baca AFML.
 
 Pasang dependency Node:
 
@@ -644,6 +735,9 @@ ARRIVAL_ACK_EXCEPTIONS
 ABNORMAL_EVIDENCE_AUDIT
 MASTER_IATA
 MAPPING_PILOT
+AFML_RAW
+AFML_LEGS
+AFML_RECON
 ```
 
 Langkah setup Apps Script:
@@ -680,6 +774,9 @@ GOOGLE_SHEETS_MAPPING_PILOT_TAB=MAPPING_PILOT
 GOOGLE_SHEETS_SORTIE_LOG_TAB=SORTIE_LOG
 GOOGLE_SHEETS_ARRIVAL_EXCEPTION_TAB=ARRIVAL_ACK_EXCEPTIONS
 GOOGLE_SHEETS_ABNORMAL_AUDIT_TAB=ABNORMAL_EVIDENCE_AUDIT
+GOOGLE_SHEETS_AFML_RAW_TAB=AFML_RAW
+GOOGLE_SHEETS_AFML_LEGS_TAB=AFML_LEGS
+GOOGLE_SHEETS_AFML_RECON_TAB=AFML_RECON
 GOOGLE_SHEETS_MAX_CELL_CHARS=40000
 GOOGLE_SHEETS_BATCH_SIZE=10
 OPS_OPERATION_TIMEZONE=Asia/Jakarta
@@ -698,6 +795,15 @@ SORTIE_LOG_FROM_DATE=2026-06-12
 
 File `config/google-sheets.env` tidak boleh di-commit.
 
+Buat config AMS lokal dan batasi permission file:
+
+```bash
+cp config/afml.env.example config/afml.env
+chmod 600 config/afml.env
+```
+
+Isi `AMS_USERNAME` dan `AMS_PASSWORD` di file tersebut. Jangan menaruh credential AMS di command line atau commit Git.
+
 Buat atau pastikan tab utama tersedia di Google Sheets:
 
 ```bash
@@ -705,6 +811,7 @@ npm run sheets:ensure
 npm run master:iata:sync
 npm run mapping:pilot:sync
 npm run sortie:sync
+npm run afml:sync
 ```
 
 Jika Sheet lama masih punya tab legacy, hapus hanya setelah `RAW`, `FLIGHT_RAW`, `FLIGHT_OPS`, `FLIGHT_TIMELINE`, `MASTER_IATA`, dan `MAPPING_PILOT` sudah benar:
@@ -772,6 +879,7 @@ Status utama ada di:
 ```text
 data/listener-status.json
 data/google-sheets-movement-sync-state.json
+data/afml-sync-state.json
 ```
 
 Log fallback jika systemd user tidak tersedia:
@@ -779,6 +887,7 @@ Log fallback jika systemd user tidak tersedia:
 ```text
 data/ingest-loop.log
 data/sheets-sync-loop.log
+data/afml-sync-loop.log
 data/listener-loop.log
 ```
 
@@ -788,6 +897,7 @@ Log systemd jika service aktif:
 journalctl --user -u new-spirit-listener.service -f
 journalctl --user -u new-spirit-ingest.service -f
 journalctl --user -u new-spirit-sheets-sync.service -f
+journalctl --user -u new-spirit-afml-sync.service -f
 ```
 
 ## Mode Debug Manual

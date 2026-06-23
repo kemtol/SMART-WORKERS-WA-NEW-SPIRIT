@@ -14,6 +14,7 @@ CONNECT_BOOTSTRAP_ATTEMPTS="${CONNECT_BOOTSTRAP_ATTEMPTS:-3}"
 SYSTEMD_UNITS=(
   new-spirit-ingest.service
   new-spirit-sheets-sync.service
+  new-spirit-afml-sync.service
   new-spirit-listener.service
 )
 
@@ -111,6 +112,26 @@ RestartSec=5
 WantedBy=default.target
 EOF
 
+  cat > "$USER_UNIT_DIR/new-spirit-afml-sync.service" <<EOF
+[Unit]
+Description=New Spirit AFML read-only reconciliation
+After=new-spirit-ingest.service
+Wants=new-spirit-ingest.service
+
+[Service]
+Type=simple
+WorkingDirectory=$ROOT_DIR
+Environment="RESTART_DELAY_SECONDS=$RESTART_DELAY_SECONDS"
+Environment="PATH=$runtime_path"
+Environment="PYTHON_BIN=$python_bin"
+ExecStart=$bash_bin $ROOT_DIR/bin/run-afml-sync-loop.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
   systemctl --user daemon-reload
 }
 
@@ -156,6 +177,7 @@ start_systemd_services() {
   systemctl --user restart \
     new-spirit-ingest.service \
     new-spirit-sheets-sync.service \
+    new-spirit-afml-sync.service \
     new-spirit-listener.service
 }
 
@@ -177,9 +199,11 @@ kill_repo_processes() {
     'bin/run-listener-loop.sh'
     'bin/run-ingest-loop.sh'
     'bin/run-sheets-sync-loop.sh'
+    'bin/run-afml-sync-loop.sh'
     'src/listen-new-messages.js'
     'app/ingest_service.py'
     'app/google_sheets_sync.py'
+    'app/afml_sync.py'
   )
   local signal pattern pid
 
@@ -214,6 +238,7 @@ start_fallback_worker() {
 start_fallback_workers() {
   start_fallback_worker ingest-loop bin/run-ingest-loop.sh
   start_fallback_worker sheets-sync-loop bin/run-sheets-sync-loop.sh
+  start_fallback_worker afml-sync-loop bin/run-afml-sync-loop.sh
   start_fallback_worker listener-loop bin/run-listener-loop.sh
 }
 
@@ -270,7 +295,7 @@ print_worker_status() {
   log
   log "Fallback/manual process dari repo ini:"
   local found=0 pattern pid
-  for pattern in 'run-listener-loop.sh' 'run-ingest-loop.sh' 'run-sheets-sync-loop.sh' 'listen-new-messages.js' 'ingest_service.py' 'google_sheets_sync.py'; do
+  for pattern in 'run-listener-loop.sh' 'run-ingest-loop.sh' 'run-sheets-sync-loop.sh' 'run-afml-sync-loop.sh' 'listen-new-messages.js' 'ingest_service.py' 'google_sheets_sync.py' 'afml_sync.py'; do
     while read -r pid; do
       [[ -z "${pid:-}" ]] && continue
       found=1
@@ -288,7 +313,7 @@ print_worker_status() {
   fi
   log
 
-  for file in "$DATA_DIR/listener-status.json" "$DATA_DIR/google-sheets-movement-sync-state.json"; do
+  for file in "$DATA_DIR/listener-status.json" "$DATA_DIR/google-sheets-movement-sync-state.json" "$DATA_DIR/afml-sync-state.json"; do
     log "$(basename "$file"):"
     if [[ -f "$file" ]]; then
       sed -n '1,120p' "$file"
