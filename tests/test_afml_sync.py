@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
 from afml_sync import (
     circular_time_delta,
+    compare_name,
     parse_afml_detail,
     parse_afml_list_response,
     init_schema,
@@ -141,6 +142,36 @@ class AfmlParserTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["departure_raw_message_id"], 101)
         self.assertEqual(rows[0]["match_status"], "MATCHED")
+
+
+class CompareNameTest(unittest.TestCase):
+    def test_initial_in_source_matches_full_token_in_target(self):
+        self.assertEqual(
+            compare_name("Samuel Saputra N. Suteja", "SAMUEL SAPUTRA NUGRAHA SUTEJA"),
+            "MATCH",
+        )
+
+    def test_source_shorter_than_target_still_matches(self):
+        self.assertEqual(compare_name("Joshua Nathanael", "JOSHUA NATHANAEL YEDIJA"), "MATCH")
+
+    def test_multiple_initials_align_to_full_tokens(self):
+        self.assertEqual(
+            compare_name("Wellem R Julexsi K", "WELLEM ROBERTH JULEXSI KAYAME"),
+            "MATCH",
+        )
+
+    def test_different_person_remains_conflict(self):
+        self.assertEqual(compare_name("Meilda Kristiningtiyas", "AKHIR SANTOSO"), "CONFLICT")
+
+    def test_spelling_variation_remains_conflict(self):
+        self.assertEqual(compare_name("Oscar Kobogau", "OSKAR KOBOGAU"), "CONFLICT")
+
+    def test_rank_prefix_is_stripped(self):
+        self.assertEqual(compare_name("Capt. Wahyu Achmad Septyan", "WAHYU ACHMAD SEPTYAN"), "MATCH")
+
+    def test_empty_source_is_unknown(self):
+        self.assertEqual(compare_name("", "WAHYU"), "UNKNOWN")
+        self.assertEqual(compare_name(None, "WAHYU"), "UNKNOWN")
 
 
 if __name__ == "__main__":

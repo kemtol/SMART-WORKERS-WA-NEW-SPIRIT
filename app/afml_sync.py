@@ -761,10 +761,37 @@ def sequence_candidates(legs, tokens):
     return result
 
 
+def name_tokens(value):
+    cleaned = re.sub(
+        r"\b(CAPT(?:AIN)?|PIC|FO|F/O|COPIL(?:OT)?|SIC)\b\.?",
+        " ",
+        str(value or "").upper(),
+    )
+    cleaned = re.sub(r"[^A-Z0-9 ]+", " ", cleaned)
+    return [token for token in cleaned.split() if token]
+
+
 def compare_name(source, target):
     if not source or not target:
         return "UNKNOWN"
-    return "MATCH" if normalize_name(source) == normalize_name(target) else "CONFLICT"
+    src = name_tokens(source)
+    tgt = name_tokens(target)
+    if not src or not tgt:
+        return "UNKNOWN"
+    if src == tgt:
+        return "MATCH"
+    si = 0
+    for tgt_token in tgt:
+        if si >= len(src):
+            break
+        src_token = src[si]
+        if src_token == tgt_token:
+            si += 1
+        elif len(src_token) == 1 and tgt_token.startswith(src_token):
+            si += 1
+        elif len(tgt_token) == 1 and src_token.startswith(tgt_token):
+            si += 1
+    return "MATCH" if si == len(src) else "CONFLICT"
 
 
 def reconcile(conn, from_date, to_date, pilot_mapping_path=DEFAULT_PILOT_MAPPING, max_time_delta=120):
