@@ -680,6 +680,8 @@ GOOGLE_SHEETS_MAPPING_PILOT_TAB=MAPPING_PILOT
 GOOGLE_SHEETS_SORTIE_LOG_TAB=SORTIE_LOG
 GOOGLE_SHEETS_ARRIVAL_EXCEPTION_TAB=ARRIVAL_ACK_EXCEPTIONS
 GOOGLE_SHEETS_ABNORMAL_AUDIT_TAB=ABNORMAL_EVIDENCE_AUDIT
+GOOGLE_SHEETS_MAX_CELL_CHARS=40000
+GOOGLE_SHEETS_BATCH_SIZE=10
 OPS_OPERATION_TIMEZONE=Asia/Jakarta
 MASTER_IATA_AUTO_SYNC=1
 MASTER_IATA_REFRESH_SECONDS=1800
@@ -1100,6 +1102,14 @@ npm run sheets:replace-flight-raw
 ```
 
 Command ini menghapus tab `FLIGHT_RAW`, membuatnya lagi dengan header terbaru, lalu mengisi ulang semua movement dari `data/ops_messages.sqlite3`. Jalankan saat sync loop sedang berhenti agar tidak ada dua proses yang menulis Google Sheet bersamaan. Gunakan hanya jika sudah yakin SQLite lokal adalah sumber data yang benar untuk silver dataset.
+
+Jika tab `RAW` perlu dibersihkan dari duplikat atau dibangun ulang dari SQLite:
+
+```bash
+npm run sheets:replace-raw
+```
+
+Worker membatasi setiap nilai sel maksimal 40.000 karakter karena Google Sheets memiliki batas ukuran sel. Nilai lengkap, terutama `payload_json`, tetap tersedia di SQLite. Batch sinkronisasi default 10 row untuk mengurangi risiko timeout Apps Script. Jangan menjalankan command replace saat service sync masih aktif.
 
 Untuk membangun ulang view rotasi pesawat:
 

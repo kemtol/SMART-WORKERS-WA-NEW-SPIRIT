@@ -35,6 +35,8 @@ DEFAULT_WEBHOOK_URL = os.environ.get("GOOGLE_SHEETS_WEBHOOK_URL")
 DEFAULT_TOKEN = os.environ.get("GOOGLE_SHEETS_WEBHOOK_TOKEN")
 DEFAULT_SPREADSHEET_ID = os.environ.get("GOOGLE_SHEETS_SPREADSHEET_ID")
 DEFAULT_OPERATION_TIMEZONE = os.environ.get("OPS_OPERATION_TIMEZONE", "Asia/Jakarta")
+MAX_SHEET_CELL_CHARS = int(os.environ.get("GOOGLE_SHEETS_MAX_CELL_CHARS", "40000"))
+DEFAULT_BATCH_SIZE = int(os.environ.get("GOOGLE_SHEETS_BATCH_SIZE", "10"))
 
 RAW_HEADERS = [
     "raw_message_id",
@@ -198,6 +200,13 @@ FLIGHT_TIMELINE_HEADERS = [
 
 def utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def safe_sheet_cell(value, field_name="value", max_chars=MAX_SHEET_CELL_CHARS):
+    if value is None or not isinstance(value, str) or len(value) <= max_chars:
+        return value
+    marker = f"\n...[{field_name} truncated from {len(value)} chars; full value is in SQLite]"
+    return value[: max(0, max_chars - len(marker))] + marker
 
 
 def operation_date_from_timestamp(timestamp_iso, timezone_name=DEFAULT_OPERATION_TIMEZONE):
@@ -377,7 +386,13 @@ def get_raw_rows(db_path, after_id, limit):
             """,
             (after_id, limit),
         ).fetchall()
-    return [{key: row[key] for key in RAW_HEADERS} for row in rows]
+    result = []
+    for row in rows:
+        item = {key: row[key] for key in RAW_HEADERS}
+        item["text"] = safe_sheet_cell(item["text"], "text")
+        item["payload_json"] = safe_sheet_cell(item["payload_json"], "payload_json")
+        result.append(item)
+    return result
 
 
 def get_flight_raw_rows(db_path, after_id, limit):
@@ -628,7 +643,15 @@ def post_payload(webhook_url, payload, timeout, spreadsheet_id=None):
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         body = response.read().decode("utf-8")
-        result = json.loads(body) if body else {}
+        try:
+            result = json.loads(body) if body else {}
+        except json.JSONDecodeError as exc:
+            content_type = response.headers.get("content-type", "")
+            preview = body[:500].replace("\n", " ")
+            raise RuntimeError(
+                f"Google Sheets webhook returned non-JSON: HTTP {response.status}, "
+                f"content-type={content_type!r}, body={preview!r}"
+            ) from exc
     if not result.get("ok"):
         raise RuntimeError(f"Google Sheets webhook rejected payload: {result}")
     return result
@@ -707,9 +730,7 @@ def replace_flight_raw_sheet(args):
         {
             "token": args.token,
             "action": "ensureSheets",
-            "sheets": [
-                {"name": args.flight_raw_sheet_name, "headers": FLIGHT_RAW_HEADERS},
-            ],
+            "sheets": [{"name": args.flight_raw_sheet_name, "headers": FLIGHT_RAW_HEADERS}],
         },
         args.timeout_seconds,
         args.spreadsheet_id,
@@ -747,6 +768,68 @@ def replace_flight_raw_sheet(args):
                 "deleted": deleted,
                 "ensured": ensured,
                 "last_movement_id": load_state(args.state)["last_movement_id"],
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+def replace_raw_sheet(args):
+    require_webhook_url(args)
+    deleted = post_payload(
+        args.webhook_url,
+        {
+            "token": args.token,
+            "action": "deleteSheets",
+            "deleteSheets": [args.raw_sheet_name],
+            "keepSheetName": args.flight_raw_sheet_name,
+        },
+        args.timeout_seconds,
+        args.spreadsheet_id,
+    )
+    ensured = post_payload(
+        args.webhook_url,
+        {
+            "token": args.token,
+            "action": "ensureSheets",
+            "sheets": [{"name": args.raw_sheet_name, "headers": RAW_HEADERS}],
+        },
+        args.timeout_seconds,
+        args.spreadsheet_id,
+    )
+
+    state = load_state(args.state)
+    state["last_raw_message_id"] = 0
+    save_state(args.state, state)
+
+    total = 0
+    while True:
+        state = load_state(args.state)
+        rows = get_raw_rows(args.db, state["last_raw_message_id"], args.batch_size)
+        if not rows:
+            break
+        synced = sync_dataset(
+            args,
+            state,
+            "last_raw_message_id",
+            args.raw_sheet_name,
+            RAW_HEADERS,
+            rows,
+            "raw_message_id",
+        )
+        total += synced["rows"]
+        if synced["rows"] < args.batch_size:
+            break
+
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "status": "raw_replaced",
+                "rows": total,
+                "deleted": deleted,
+                "ensured": ensured,
+                "last_raw_message_id": load_state(args.state)["last_raw_message_id"],
             },
             ensure_ascii=False,
         )
@@ -974,7 +1057,7 @@ def main():
     parser.add_argument("--flight-raw-sheet-name", default=DEFAULT_FLIGHT_RAW_SHEET_NAME)
     parser.add_argument("--flight-ops-sheet-name", default=DEFAULT_FLIGHT_OPS_SHEET_NAME)
     parser.add_argument("--flight-timeline-sheet-name", default=DEFAULT_FLIGHT_TIMELINE_SHEET_NAME)
-    parser.add_argument("--batch-size", type=int, default=100)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--interval-seconds", type=int, default=15)
     parser.add_argument("--timeout-seconds", type=int, default=30)
     parser.add_argument("--from-raw-id", type=int, default=None)
@@ -988,6 +1071,7 @@ def main():
     parser.add_argument("--delete-legacy-sheets", action="store_true")
     parser.add_argument("--replace-flight-raw", action="store_true")
     parser.add_argument("--replace-flight-timeline", action="store_true")
+    parser.add_argument("--replace-raw", action="store_true")
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -1002,6 +1086,10 @@ def main():
 
     if args.replace_flight_raw:
         replace_flight_raw_sheet(args)
+        return
+
+    if args.replace_raw:
+        replace_raw_sheet(args)
         return
 
     if args.replace_flight_timeline:

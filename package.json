@@ -22,6 +22,7 @@
     "sheets:delete-legacy": "python3 app/google_sheets_sync.py --delete-legacy-sheets",
     "sheets:sync": "python3 app/google_sheets_sync.py --once",
     "sheets:replace-flight-raw": "python3 app/google_sheets_sync.py --replace-flight-raw",
+    "sheets:replace-raw": "python3 app/google_sheets_sync.py --replace-raw",
     "sheets:replace-flight-timeline": "python3 app/google_sheets_sync.py --replace-flight-timeline",
     "sheets:sync:loop": "bash bin/run-sheets-sync-loop.sh",
     "master:iata:sync": "python3 app/sync_master_iata_sheet.py",
