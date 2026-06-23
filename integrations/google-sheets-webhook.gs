@@ -175,36 +175,49 @@ function doPost(event) {
   if (!spreadsheetId) {
     return json_({ ok: false, error: 'missing SPREADSHEET_ID script property' });
   }
-  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
 
-  if (payload.action === 'listSheets') {
-    return json_({
-      ok: true,
-      sheets: spreadsheet.getSheets().map((sheet) => sheet.getName()),
-    });
+  const lock = LockService.getDocumentLock();
+  try {
+    lock.waitLock(30000);
+  } catch (err) {
+    return json_({ ok: false, error: 'lock_timeout', detail: String(err) });
   }
 
-  if (payload.action === 'ensureSheets') {
-    return ensureSheets_(spreadsheet, payload.sheets || defaultSheets_());
+  try {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+
+    if (payload.action === 'listSheets') {
+      return json_({
+        ok: true,
+        sheets: spreadsheet.getSheets().map((sheet) => sheet.getName()),
+      });
+    }
+
+    if (payload.action === 'ensureSheets') {
+      return ensureSheets_(spreadsheet, payload.sheets || defaultSheets_());
+    }
+
+    if (payload.action === 'deleteSheets') {
+      return deleteSheets_(spreadsheet, payload.deleteSheets || [], payload.keepSheetName || DEFAULT_SHEET_NAME);
+    }
+
+    const sheetName = payload.sheetName || DEFAULT_SHEET_NAME;
+    const headers = payload.headers || defaultHeadersForSheet_(sheetName);
+    const rows = payload.rows || [];
+    const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
+
+    ensureHeaders_(sheet, headers);
+    const sheetHeaders = readHeaders_(sheet);
+    if (rows.length > 0) {
+      const values = rows.map((row) => sheetHeaders.map((header) => row[header] == null ? '' : row[header]));
+      sheet.getRange(sheet.getLastRow() + 1, 1, values.length, sheetHeaders.length).setValues(values);
+    }
+
+    return json_({ ok: true, sheetName, appended: rows.length });
+  } finally {
+    SpreadsheetApp.flush();
+    lock.releaseLock();
   }
-
-  if (payload.action === 'deleteSheets') {
-    return deleteSheets_(spreadsheet, payload.deleteSheets || [], payload.keepSheetName || DEFAULT_SHEET_NAME);
-  }
-
-  const sheetName = payload.sheetName || DEFAULT_SHEET_NAME;
-  const headers = payload.headers || defaultHeadersForSheet_(sheetName);
-  const rows = payload.rows || [];
-  const sheet = spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
-
-  ensureHeaders_(sheet, headers);
-  const sheetHeaders = readHeaders_(sheet);
-  if (rows.length > 0) {
-    const values = rows.map((row) => sheetHeaders.map((header) => row[header] == null ? '' : row[header]));
-    sheet.getRange(sheet.getLastRow() + 1, 1, values.length, sheetHeaders.length).setValues(values);
-  }
-
-  return json_({ ok: true, sheetName, appended: rows.length });
 }
 
 function defaultSheets_() {
