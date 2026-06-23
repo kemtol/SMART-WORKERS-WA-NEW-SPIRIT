@@ -83,7 +83,33 @@ SORTIE_HEADERS = [
     "arrival_movement_id",
     "parse_confidence",
     "issue_notes",
+    "afml_match_status",
+    "afml_id",
+    "afml_route",
+    "afml_takeoff_time",
+    "afml_block_minutes",
+    "afml_flight_minutes",
+    "afml_captain_name",
+    "afml_copilot_name",
+    "afml_time_delta_minutes",
+    "afml_quality_score",
+    "afml_issue_notes",
 ]
+
+AFML_RECON_LOOKUP_COLUMNS = (
+    "departure_movement_id",
+    "afml_id",
+    "afml_route",
+    "afml_takeoff_time",
+    "afml_block_minutes",
+    "afml_flight_minutes",
+    "afml_captain_name",
+    "afml_copilot_name",
+    "time_delta_minutes",
+    "match_status",
+    "quality_score",
+    "issue_notes",
+)
 
 ARRIVAL_EXCEPTION_HEADERS = [
     "exception_id",
@@ -509,7 +535,72 @@ def load_abnormal_evidence(db_path, timezone_name, from_date=None, to_date=None)
     return evidence
 
 
-def build_sortie_rows(departures, matches, abnormal_evidence, pilot_index, timezone_name):
+def load_afml_reconciliation(db_path, from_date, to_date):
+    clauses = []
+    params = []
+    if from_date:
+        clauses.append("operation_date >= ?")
+        params.append(from_date)
+    if to_date:
+        clauses.append("operation_date <= ?")
+        params.append(to_date)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    column_list = ", ".join(AFML_RECON_LOOKUP_COLUMNS)
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN")
+            rows = conn.execute(
+                f"SELECT {column_list} FROM afml_reconciliation {where}",
+                params,
+            ).fetchall()
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return {}
+    lookup = {}
+    for row in rows:
+        movement_id = row["departure_movement_id"]
+        if movement_id is None:
+            continue
+        lookup[movement_id] = {column: row[column] for column in AFML_RECON_LOOKUP_COLUMNS}
+    return lookup
+
+
+def afml_columns_for_row(afml_row):
+    if not afml_row:
+        return {
+            "afml_match_status": "NO_AFML_DATA",
+            "afml_id": None,
+            "afml_route": None,
+            "afml_takeoff_time": None,
+            "afml_block_minutes": None,
+            "afml_flight_minutes": None,
+            "afml_captain_name": None,
+            "afml_copilot_name": None,
+            "afml_time_delta_minutes": None,
+            "afml_quality_score": None,
+            "afml_issue_notes": None,
+        }
+    return {
+        "afml_match_status": afml_row["match_status"],
+        "afml_id": afml_row["afml_id"],
+        "afml_route": afml_row["afml_route"],
+        "afml_takeoff_time": afml_row["afml_takeoff_time"],
+        "afml_block_minutes": afml_row["afml_block_minutes"],
+        "afml_flight_minutes": afml_row["afml_flight_minutes"],
+        "afml_captain_name": afml_row["afml_captain_name"],
+        "afml_copilot_name": afml_row["afml_copilot_name"],
+        "afml_time_delta_minutes": afml_row["time_delta_minutes"],
+        "afml_quality_score": afml_row["quality_score"],
+        "afml_issue_notes": afml_row["issue_notes"],
+    }
+
+
+def build_sortie_rows(departures, matches, abnormal_evidence, pilot_index, timezone_name, afml_by_movement_id=None):
+    afml_by_movement_id = afml_by_movement_id or {}
     evidence_by_aircraft_date = defaultdict(list)
     for evidence in abnormal_evidence:
         for registration in evidence["registrations"]:
@@ -610,6 +701,7 @@ def build_sortie_rows(departures, matches, abnormal_evidence, pilot_index, timez
             "arrival_movement_id": matched["id"] if matched else None,
             "parse_confidence": departure["parse_confidence"],
             "issue_notes": "; ".join(notes),
+            **afml_columns_for_row(afml_by_movement_id.get(departure["id"])),
         }
         rows.append({header: row.get(header) for header in SORTIE_HEADERS})
     return sorted(rows, key=lambda row: (row["departure_datetime_utc"] or "", row["mission_id"]))
@@ -710,8 +802,10 @@ def validate(rows, from_date=None, to_date=None):
 
 def summary(rows, exceptions, abnormal, failures):
     status_counts = defaultdict(int)
+    afml_counts = defaultdict(int)
     for row in rows:
         status_counts[row["mission_status"]] += 1
+        afml_counts[row.get("afml_match_status") or "NO_AFML_DATA"] += 1
     return {
         "sortie_total": len(rows),
         "completed_ack_received": status_counts["completed_ack_received"],
@@ -724,6 +818,7 @@ def summary(rows, exceptions, abnormal, failures):
         "cargo_kg": round(sum(row["cargo_kg"] or 0 for row in rows), 3),
         "arrival_only_exceptions": len(exceptions),
         "abnormal_evidence_rows": len(abnormal),
+        "afml_match_status": dict(afml_counts),
         "validation_failures": failures,
     }
 
@@ -762,7 +857,10 @@ def main():
         matches, used_arrivals = match_arrivals(departures, arrivals)
         abnormal = load_abnormal_evidence(args.db, args.timezone, args.from_date, args.to_date)
         pilot_index = load_pilot_index(args.pilot_mapping)
-        sortie_rows = build_sortie_rows(departures, matches, abnormal, pilot_index, args.timezone)
+        afml_by_movement_id = load_afml_reconciliation(args.db, args.from_date, args.to_date)
+        sortie_rows = build_sortie_rows(
+            departures, matches, abnormal, pilot_index, args.timezone, afml_by_movement_id
+        )
         exception_rows = build_arrival_exceptions(arrivals, used_arrivals, args.timezone)
         abnormal_rows = [{header: row.get(header) for header in ABNORMAL_AUDIT_HEADERS} for row in abnormal]
         failures = validate(sortie_rows, args.from_date, args.to_date)
